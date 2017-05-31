@@ -1,0 +1,471 @@
+;(function(){
+
+
+  function PFGL(selector, parameters){
+
+    var gl = this.gl = document.querySelector(selector).getContext('webgl', parameters);
+    this.program = [];
+    this.pointer = [];
+    this.currentProgramIndex = -1;
+    this.textureCubeTargets = [
+      gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
+      gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
+      gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z
+    ];
+
+  };
+
+
+  PFGL.prototype.useProgram = function(program){
+
+    this.currentProgramIndex = this.program.indexOf(program);
+    this.gl.useProgram(program);
+
+    return this;
+
+  };
+
+
+  PFGL.prototype.getCurrentProgram = function(){
+
+    return this.program[this.currentProgramIndex];
+
+  };
+
+
+  PFGL.prototype.shader = function(vshader, fshader){
+
+    var gl = this.gl;
+    var vertexShader = this.loadShader(gl.VERTEX_SHADER, vshader);
+    var fragmentShader = this.loadShader(gl.FRAGMENT_SHADER, fshader);
+
+    var program = gl.createProgram();
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+
+    var linked = gl.getProgramParameter(program, gl.LINK_STATUS);
+    if(!linked){
+      var error = gl.getProgramInfoLog(program);
+      console.error('Failed to link program: ' + error);
+      gl.deleteProgram(program);
+      gl.deleteShader(fragmentShader);
+      gl.deleteShader(vertexShader);
+      return;
+    }
+
+    this.program.push(program);
+    this.pointer.push({});
+    this.useProgram(program);
+
+    return program;
+
+  };
+
+  PFGL.prototype.loadShader = function(type, source){
+
+    var gl = this.gl;
+    var shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+
+    var compiled = gl.getShaderParameter(shader, gl.COMPILE_STATUS);
+    if(!compiled){
+      var error = gl.getShaderInfoLog(shader);
+      console.error('Failed to compile shader: ' + error);
+      console.log(gl.getShaderSource(shader));
+      gl.deleteShader(shader);
+      return;
+    }
+
+    return shader;
+
+  };
+
+
+  PFGL.prototype.buildBuffer = function(type, typedArray){
+
+    var gl = this.gl;
+    var buffer = gl.createBuffer();
+    gl.bindBuffer(type, buffer);
+    gl.bufferData(type, typedArray, gl.STATIC_DRAW);
+
+    return buffer;
+
+  };
+
+
+  PFGL.prototype.drawElements = function(mode, indices, type, offset){
+    //cache buffer?
+    this.buildBuffer(this.gl.ELEMENT_ARRAY_BUFFER, indices);
+    this.gl.drawElements(mode, indices.length, type, offset);
+
+  };
+
+
+  PFGL.prototype.attribute = function(attributes, data, program){
+
+    var gl = this.gl;
+
+    if(typeof attributes == 'string'){
+      attributes = { name: attributes };
+    }
+
+    if(!Array.isArray(attributes)){
+      attributes = new Array(attributes);
+    }
+
+    if(data.BYTES_PER_ELEMENT){
+
+      this.buildBuffer(gl.ARRAY_BUFFER, data);
+
+    }else{
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, data);
+
+    }
+
+    program = program || this.getCurrentProgram();
+
+    for(var i = 0; i < attributes.length; i ++){
+
+      var name = attributes[i].name;
+      var pointer = null;
+
+      if(this.pointer[this.currentProgramIndex][name] >= 0){
+
+        pointer = this.pointer[this.currentProgramIndex][name];
+
+      }else{
+
+        pointer = gl.getAttribLocation(program, name);
+        if(pointer < 0){
+          console.error('Failed to get the attribute location of ' + name);
+          return;
+        }
+        this.pointer[this.currentProgramIndex][name] = pointer;
+
+      }
+
+      var size = attributes[i].size || 3;
+      var stride = attributes[i].stride || 0;
+      var offset = attributes[i].offset || 0;
+
+      gl.vertexAttribPointer(pointer, size, gl.FLOAT, false, stride, offset);
+      gl.enableVertexAttribArray(pointer);
+
+    }
+
+  };
+
+
+  PFGL.prototype.uniform = function(uniform, typedArray, type, program){
+
+    var gl = this.gl;
+
+    if(typeof type != 'string'){
+      program = type;
+      type = '';
+    }
+
+    type = type || '';
+    program = program || this.getCurrentProgram();
+
+    if(!type){
+
+      if(typeof typedArray == 'number'){
+
+        if(typedArray % 1 === 0){
+
+          type = '1i';
+
+        }else{
+
+          type = '1f';
+
+        }
+
+      }else if(typedArray.length){
+
+        if(typedArray.some(isNaN)){
+          console.error('Some values are not a number ' + typedArray);
+          return;
+        }
+
+        switch(typedArray.length){
+
+          case 2:
+            type = '2fv';
+            break;
+
+          case 3:
+            type = '3fv';
+            break;
+
+          case 4:
+            type = '4fv';
+            break;
+
+          case 9:
+            type = 'mat3fv';
+            break;
+
+        }
+
+      }
+
+    }
+
+    var pointer = null;
+
+    if(this.pointer[this.currentProgramIndex][uniform]){
+
+      pointer = this.pointer[this.currentProgramIndex][uniform];
+
+    }else{
+
+      pointer = gl.getUniformLocation(program, uniform);
+      if(!pointer){
+        console.error('Failed to get the uniform location of ' + uniform);
+        return;
+      }
+      this.pointer[this.currentProgramIndex][uniform] = pointer;
+
+    }
+
+    switch(type){
+
+      case '1i':
+        gl.uniform1i(pointer, typedArray);
+        break;
+
+      case '1f':
+        gl.uniform1f(pointer, typedArray);
+        break;
+
+      case '2fv':
+        gl.uniform2fv(pointer, typedArray);
+        break;
+
+      case '3fv':
+        gl.uniform3fv(pointer, typedArray);
+        break;
+
+      case '4fv':
+        gl.uniform4fv(pointer, typedArray);
+        break;
+
+      case 'mat3fv':
+        gl.uniformMatrix3fv(pointer, false, typedArray);
+        break;
+
+      case 'mat4fv':
+      default:
+        gl.uniformMatrix4fv(pointer, false, typedArray);
+
+    }
+
+    return pointer;
+
+  };
+
+
+  PFGL.prototype.texture2d = function(element, unit, width, height){
+
+    var gl = this.gl;
+
+    //flip the image's y axis
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+    var texture = gl.createTexture();
+
+    gl.activeTexture(gl.TEXTURE0 + unit);
+
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+
+    //set texture resource https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/texImage2D
+    if(element && /img|canvas|video/i.test(element.nodeName)){
+
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, element);
+
+    }else{
+
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+    }
+
+    //set texture behaviour
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT);
+    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
+
+    return texture;
+
+  };
+
+  /*
+   * @param {Array} elements - Array elements is return value frome PFGL.loadImg.
+   */
+  PFGL.prototype.textureCube = function(elements, unit, width, height){
+
+    var gl = this.gl;
+
+    //flip the image's y axis
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+
+    var texture = gl.createTexture();
+
+    gl.activeTexture(gl.TEXTURE0 + unit);
+
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
+
+    elements.forEach((v, i) => {
+
+      var element = v && v[0];
+
+      if(element && /img|canvas|video/i.test(element.nodeName)){
+
+        gl.texImage2D(this.textureCubeTargets[i], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, element);
+
+      }else{
+
+        gl.texImage2D(this.textureCubeTargets[i], 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+
+      }
+
+    });
+
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+
+    gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+
+    return texture;
+
+  };
+
+
+  PFGL.prototype.frameBuffer = function(width, height, textureType, textureUnit){
+
+    var gl = this.gl, texture;
+
+    textureType = textureType || 2;//Default off screen texture is 2d
+    textureUnit = textureUnit || 0;
+
+    if(textureType == 2){
+
+      texture = this.texture2d(null, textureUnit, width, height);
+
+    }else if(textureType == 3){
+
+      texture = this.textureCube([...(new Array(6))], textureUnit, width, height);
+
+    }
+
+    var depthBuffer = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, depthBuffer);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
+
+    var frameBuffer = gl.createFramebuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuffer);
+
+    if(textureType == 2){
+
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+
+    }else if(textureType == 3){
+
+      /*this.textureCubeTargets.forEach((v) => {
+
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, v, texture, 0);
+
+      });*/
+
+    }
+
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthBuffer);
+
+    var e = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    if(gl.FRAMEBUFFER_COMPLETE !== e){
+      gl.deleteFramebuffer(frameBuffer);
+      gl.deleteTexture(texture);
+      gl.deleteRenderbuffer(depthBuffer);
+      console.error('Frame buffer object is incomplete: ' + e.toString());
+      return;
+    }
+
+    // gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    // gl.bindTexture(gl.TEXTURE_2D, null);
+    // gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+
+    return {
+      frameBuffer: frameBuffer,
+      depthBuffer: depthBuffer,
+      texture: texture
+    };
+
+  };
+
+
+  //static
+  PFGL.loadImg = function(url){
+
+    return new Promise((resolve, reject) => {
+
+      var img = new Image;
+
+      img.onload = () => {
+
+        //power-of-two check
+        if(is2Pow(img.width) && is2Pow(img.height)){
+
+          resolve([img, img.width, img.height]);
+
+        }else{
+
+          var canvas = document.createElement('canvas');
+          var ctx = canvas.getContext('2d');
+
+          canvas.width = nearestPowerOfTwo(img.width);
+          canvas.height = nearestPowerOfTwo(img.height);
+
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          resolve([canvas, img.width, img.height]);
+
+        }
+
+      };
+
+      img.onerror = () => {
+
+        reject('Can\'t load image at ' + url);
+
+      };
+
+      img.src = url;
+
+    });
+
+    function nearestPowerOfTwo(num){
+
+      return Math.pow(2, Math.round(Math.log(num) / Math.LN2));
+
+    }
+
+    function is2Pow(num){
+
+      return (num & num - 1) == 0 && num != 0;
+
+    }
+
+  };
+
+
+
+   window.PFGL = PFGL;
+
+})();

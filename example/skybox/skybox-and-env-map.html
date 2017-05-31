@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>WebGL Reflection Mapping With Skybox</title>
+
+</head>
+<body>
+
+<canvas width="600" height="600" id="glcanvas" ></canvas>
+
+<p>
+  <a target="_blank" href="http://math.hws.edu/eck/cs424/notes2013/webgl/skybox-and-reflection/skybox-and-env-map.html">math.hws.edu/eck/cs424/notes2013</a>
+</p>
+
+<script type="x-shader/x-vertex" id="vshaderSB">
+  uniform mat4 projection;
+  uniform mat4 modelview;
+  attribute vec3 coords;
+  varying vec3 vCoords;
+  void main(){
+    vec4 eyeCoords = modelview * vec4(coords,1.0);
+    gl_Position = projection * eyeCoords;
+    vCoords = coords;//gl_Position.xyz;
+  }
+</script>
+<script type="x-shader/x-fragment" id="fshaderSB">
+  precision mediump float;
+  varying vec3 vCoords;
+  uniform samplerCube skybox;
+  void main(){
+    gl_FragColor = textureCube(skybox, vCoords);
+  }
+</script>
+<script type="x-shader/x-vertex" id="vshader">
+  uniform mat4 projection;
+  uniform mat4 modelview;
+  attribute vec3 coords;
+  attribute vec3 normal;
+  varying vec3 viewCoords;
+  varying vec3 vNormal;
+  void main(){
+    vec4 eyeCoords = modelview * vec4(coords,1.0);
+    gl_Position = projection * eyeCoords;
+    viewCoords = eyeCoords.xyz;
+    vNormal = normal;
+  }
+</script>
+<script type="x-shader/x-fragment" id="fshader">
+  precision mediump float;
+  varying vec3 vCoords;
+  varying vec3 vNormal;
+  varying vec3 viewCoords;
+  uniform samplerCube skybox;
+  uniform mat3 normalMatrix;
+  uniform mat3 invVT;
+  void main(){
+    vec3 N = normalMatrix * vNormal;
+    vec3 V = -viewCoords;
+    vec3 R = 2.0 * dot(V,N) * N - V;
+    R = invVT * R; // Transform by inverse of view transform, which was applied to the skybox
+    gl_FragColor = textureCube(skybox, R);
+  }
+</script>
+
+<script src="../../pfgl.js"></script>
+<script src="../js/lib/gl-matrix.js"></script>
+<script src="../js/simple-rotator.js"></script>
+<script src="../js/basic-objects-IFS.js"></script>
+
+<script type="text/javascript">
+
+  "use strict";
+
+  var projection = mat4.create();   // projection matrix
+  var modelview;    // modelview matrix
+  var normalMatrix = mat3.create();
+  var invVT = mat3.create();  // The inverse of the view transform rotation matrix.
+
+
+  var cube;    // The cube that is the skybox.
+  var teapot;  // The teapot.
+
+
+  var rotX = 0, rotY = 0;  // Additional rotations applied as modeling transform to the teapot.
+
+  var urls = [
+    '../img/skybox/posx.jpg', '../img/skybox/negx.jpg',
+    '../img/skybox/posy.jpg', '../img/skybox/negy.jpg',
+    '../img/skybox/posz.jpg', '../img/skybox/negz.jpg'
+  ];
+
+
+  var pfgl = new PFGL('#glcanvas');
+  var gl = pfgl.gl;
+
+  var prog_SB = pfgl.shader(document.getElementById('vshaderSB').innerText, document.getElementById('fshaderSB').innerText);
+
+  var prog = pfgl.shader(document.getElementById('vshader').innerText, document.getElementById('fshader').innerText);
+
+
+  gl.enable(gl.DEPTH_TEST);
+  var rotator = new SimpleRotator(gl.canvas, draw);
+  rotator.setView([0,0,1], [0,1,0], 40);
+
+  teapot = createModel(teapotModel);
+  //teapot = createModel(cube(20));
+  cube = createModelSB(cube(1000));
+
+  Promise.all(urls.map((v) => {
+
+    return PFGL.loadImg(v);
+
+  })).then((a) => {
+
+    pfgl.textureCube(a, 0);
+
+    //pfgl.uniform('skybox', 0);
+
+    draw();
+
+  });
+
+
+  function createModel(teapotModel){  // For creating the skybox cube.
+
+    var model = {};
+
+    var count = teapotModel.indices.length;
+
+    var coordsBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, teapotModel.vertexPositions);
+    var normalBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, teapotModel.vertexNormals);
+
+    var indexBuffer = pfgl.buildBuffer(gl.ELEMENT_ARRAY_BUFFER, teapotModel.indices);
+
+
+    model.render = function(){
+
+      pfgl.useProgram(prog);
+
+      pfgl.attribute('coords', coordsBuffer);
+      pfgl.attribute('normal', normalBuffer);
+
+      pfgl.uniform('modelview', modelview);
+      pfgl.uniform('normalMatrix', normalMatrix);
+      pfgl.uniform('invVT', invVT);
+
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+      gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, 0);
+
+    };
+
+    return model;
+
+  }
+
+  function createModelSB(modelData){  // For creating the teapot model.
+
+    var model = {};
+
+    var count = modelData.indices.length;
+
+    var coordsBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, modelData.vertexPositions);
+    var indexBuffer = pfgl.buildBuffer(gl.ELEMENT_ARRAY_BUFFER, modelData.indices);
+
+    model.render = function(){
+
+      pfgl.useProgram(prog_SB);
+
+      pfgl.attribute('coords', coordsBuffer);
+
+      pfgl.uniform('modelview', modelview);
+
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+      gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, 0);
+
+    }
+
+    return model;
+  }
+
+
+  function draw(){
+
+    gl.clearColor(0,0,0,1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    mat4.perspective(projection, Math.PI/3, 1, 10, 2000);
+
+    modelview = rotator.getViewMatrix();
+    mat3.normalFromMat4(normalMatrix, modelview);
+
+    // Draw the skybox, with the viewing transform from the rotator.
+
+    pfgl.useProgram(prog_SB); // Select the shader program that is used for the skybox.
+    pfgl.uniform('projection', projection);
+
+    cube.render();
+
+    // Get the inverse of the rotation that was applied to the skybox.
+    // This is needed in the teapot shader to account for the rotation
+    // of the skybox.  (Note that it is passed to the shader in the
+    // teapot's render function.)
+
+    mat3.fromMat4(invVT, modelview);
+    mat3.invert(invVT,invVT);
+
+    // Add modeling rotations to the view transform.
+
+    mat4.rotateX(modelview,modelview,rotX);
+    mat4.rotateY(modelview,modelview,rotY);
+
+    mat3.normalFromMat4(normalMatrix, modelview);
+
+    // Draw the teapot.
+
+    pfgl.useProgram(prog); // Select the shader program that is used for the teapot.
+    pfgl.uniform('projection', projection);
+
+    teapot.render();
+    // gl.disableVertexAttribArray(aCoords);
+    // gl.disableVertexAttribArray(aNormal);
+
+  }
+
+
+
+
+
+  document.addEventListener("keydown", doKey, false);
+
+  /**
+   *  An event listener for the keydown event.  It is installed by the init() function.
+   */
+  function doKey(evt){
+    var rotationChanged = true;
+    switch (evt.keyCode) {
+      case 37: rotY -= 0.15; break;// left arrow
+      case 39: rotY +=  0.15; break;// right arrow
+      case 38: rotX -= 0.15; break;// up arrow
+      case 40: rotX += 0.15; break;// down arrow
+      case 13: rotX = rotY = 0; break;// return
+      case 36: rotX = rotY = 0; break;// home
+      default: rotationChanged = false;
+    }
+    if(rotationChanged){
+      evt.preventDefault();
+      draw();
+    }
+  }
+
+
+
+</script>
+
+</body>
+</html>

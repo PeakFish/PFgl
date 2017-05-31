@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>texture</title>
+</head>
+<body>
+
+<canvas width="512" height="512" id="canvas1"></canvas>
+<p>
+  <input type="button" value="原图" data-value="0" />
+  <input type="button" value="灰度" data-value="1" />
+  <input type="button" value="黑白" data-value="2" />
+  <input type="button" value="底片" data-value="3" />
+  <input type="button" value="浮雕" data-value="4" />
+</p>
+
+<script src="../pfgl.js"></script>
+<script src="js/lib/gl-matrix.js"></script>
+
+<script type="x-shader/x-vertex" id="v1">
+  attribute vec4 a_Position;
+  attribute vec2 a_TexCoord;
+
+  varying vec2 v_TexCoord;
+
+  void main(){
+
+    gl_Position = a_Position;
+    v_TexCoord = a_TexCoord;
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="f1">
+  #ifdef GL_ES
+  precision mediump float;
+  #endif
+
+  uniform int f;
+  uniform sampler2D u_Sampler;
+
+  varying vec2 v_TexCoord;
+
+  //灰度图
+  vec4 gray(vec4 c){
+
+    float r = c.r;
+    float g = c.g;
+    float b = c.b;
+    float gray = (r+g+b)/3.0;
+
+    return vec4(gray, gray, gray, 1);
+
+  }
+
+  //黑白图
+  vec4 blackWhite(vec4 c){
+
+    vec4 pixel;
+
+    float r = c.r;
+    float g = c.g;
+    float b = c.b;
+    float gray = (r+g+b)/3.0;
+
+    int v = gray > 0.5 ? 1 : 0 ;
+
+    pixel = vec4(v, v, v, 1);
+
+    return pixel;
+
+  }
+
+  //底片
+  vec4 negative(vec4 c){
+
+    return vec4(1.0 - c.rgb, c.a);
+
+  }
+
+  //浮雕
+  vec4 relief(sampler2D s, vec2 coord){
+
+    vec4 currentC = texture2D(s, coord);
+    vec4 nextC = texture2D(s, coord + vec2(0.001, 0.0));
+
+    vec4 diff = currentC - nextC;
+    diff += 0.5;
+
+    float g = (diff.r + diff.g + diff.b) / 3.0;
+    g = clamp(g, 0.0, 1.0);
+
+    return vec4(g, g, g, 1);
+
+  }
+
+  void main(){
+
+    vec4 texColor = texture2D(u_Sampler, v_TexCoord);
+
+    if(f == 1){
+
+      gl_FragColor = gray(texColor);
+
+    }else if(f == 2){
+
+      gl_FragColor = blackWhite(texColor);
+
+    }else if(f == 3){
+
+      gl_FragColor = negative(texColor);
+
+    }else if(f == 4){
+
+      gl_FragColor = relief(u_Sampler, v_TexCoord);
+
+    }else{
+
+      gl_FragColor = texColor;
+
+    }
+
+  }
+
+</script>
+<script>
+
+  var pfgl = new PFGL('#canvas1');
+  var gl = pfgl.gl;
+
+  var program = pfgl.shader(document.querySelector('#v1').innerText, document.querySelector('#f1').innerText);
+
+  var src = 'img/marlin.jpg';
+  src = 'img/FindingNemo.jpg';
+
+  PFGL.loadImg(src).then(function(a){
+
+    var img = a[0];
+    var width = a[1];
+    var height = a[2];
+    var textureUnit = 5;
+
+    pfgl.texture2d(img, textureUnit);
+
+    var ratio = width / height;
+
+    if(ratio > 1){
+      var width = 1;
+      var height = 1 / ratio;
+    }else{
+      var height = 1;
+      var width = ratio;
+    }
+
+
+    var verticesTexCoords = new Float32Array([
+      -width, height,         0.0, 1.0,
+      -width, -height,        0.0, 0.0,
+       width, height,         1.0, 1.0,
+       width, -height,        1.0, 0.0
+    ]);
+
+/*
+    var verticesTexCoords = new Float32Array([
+      -0.5, 0.5,                    0.0, 1.0,
+      -0.5, 0.5 - 1 / ratio,        0.0, 0.0,
+       0.5, 0.5,                    1.0, 1.0,
+       0.5, 0.5 - 1 / ratio,        1.0, 0.0
+    ]);
+*/
+    var FSIZE = verticesTexCoords.BYTES_PER_ELEMENT;
+
+    var attributes = [
+      {
+        name: 'a_Position',
+        size: 2,
+        stride: 4 * FSIZE,
+        offset: 0 * FSIZE
+      },
+      {
+        name: 'a_TexCoord',
+        size: 2,
+        stride: 4 * FSIZE,
+        offset: 2 * FSIZE
+      }
+    ];
+
+    pfgl.attribute(attributes, verticesTexCoords);
+
+    pfgl.uniform('u_Sampler', textureUnit);
+
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+  });
+
+
+  var btns = document.querySelectorAll('p input[type="button"]');
+
+  [].forEach.call(btns, function(value){
+
+    value.addEventListener('click', function(){
+
+      var n = +this.dataset.value;
+
+      pfgl.uniform('f', n);
+
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    }, false);
+
+  });
+
+
+
+
+</script>
+
+</body>
+</html>

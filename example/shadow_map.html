@@ -1,0 +1,294 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>shadow</title>
+</head>
+<body>
+
+<canvas width="600" height="600" id="canvas1"></canvas>
+
+<script src="../pfgl.js"></script>
+<script src="js/lib/gl-matrix.js"></script>
+
+<script type="x-shader/x-vertex" id="v1">
+  attribute vec4 a_position;
+  uniform mat4 u_mvpMat;
+
+  void main(){
+
+    gl_Position = u_mvpMat * a_position;
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="f1">
+  precision mediump float;
+
+  void main(){
+
+    //需要开启 gl.DEPTH_TEST 这样深度信息里面记录的是裁剪后的
+    gl_FragColor = vec4(gl_FragCoord.z, 0.0, 0.0, 1.0);
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="high-f1">
+  precision mediump float;
+
+  void main(){
+
+    const vec4 bitShift = vec4(1.0, 256.0, 256.0 * 256.0, 256.0 * 256.0 * 256.0);
+    const vec4 bitMask = vec4(1.0 / 256.0, 1.0 / 256.0, 1.0 / 256.0, 0.0);
+    //fract 取小数部分
+    vec4 rgbaDepth = fract(gl_FragCoord.z * bitShift);
+    //减去过高的精度
+    rgbaDepth -= rgbaDepth.gbaa * bitMask;
+    gl_FragColor = rgbaDepth;
+    //gl_FragColor = vec4(0.5, 0.5, 0.5, 1.0);
+
+  }
+</script>
+<script type="x-shader/x-vertex" id="v2">
+  attribute vec4 a_position;
+  attribute vec4 a_color;
+
+  uniform mat4 u_mvpMat;
+  uniform mat4 u_mvpMatInLight;
+
+  varying vec4 v_positionInLight;
+  varying vec4 v_color;
+
+  void main(){
+
+    gl_Position = u_mvpMat * a_position;
+    v_positionInLight = u_mvpMatInLight * a_position;
+    v_color = a_color;
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="f2">
+  precision mediump float;
+
+  uniform sampler2D u_shadowMap;
+
+  varying vec4 v_positionInLight;
+  varying vec4 v_color;
+
+  void main(){
+
+    //把webgl坐标(-1, 1) 转换到纹理坐标(0, 1) , 和 纹素(颜色)的值的区间(0, 1)
+    vec3 shadowCoord = (v_positionInLight.xyz / v_positionInLight.w) / 2.0 + 0.5;
+    //抽取纹素
+    vec4 rgbaDepth = texture2D(u_shadowMap, shadowCoord.xy);
+    float depth = rgbaDepth.r;
+    //如果深度值大的比存的大 那么是阴影的区域，乘以一个值颜色加深，为了防止出现马赫带在加上了一个0.005 略大于精度
+    //shadowCoord.z 精确度是 16位 depth 的精度是 8位
+    float visibility = (shadowCoord.z > depth + 0.004) ? 0.7 : 1.0;
+    gl_FragColor = vec4(v_color.rgb * visibility, v_color.a);
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="high-f2">
+  precision mediump float;
+
+  uniform sampler2D u_shadowMap;
+
+  varying vec4 v_positionInLight;
+  varying vec4 v_color;
+
+  float unpackDepth(const in vec4 rgbaDepth){
+    const vec4 bitShift = vec4(1.0, 1.0 / 256.0, 1.0 / (256.0 * 256.0), 1.0 / (256.0 * 256.0 * 256.0));
+    float depth = dot(rgbaDepth, bitShift);
+    return depth;
+  }
+
+  void main(){
+
+    //坐标变换
+    vec3 shadowCoord = (v_positionInLight.xyz / v_positionInLight.w) / 2.0 + 0.5;
+    //抽取纹素信息
+    vec2 clampCoord = clamp(shadowCoord.xy, vec2(0.0, 0.0), vec2(1.0, 1.0));
+    vec4 rgbaDepth = texture2D(u_shadowMap, shadowCoord.xy);
+    //从四个分量中解析出来一个值
+    float depth = unpackDepth(rgbaDepth);
+    float visibility = (shadowCoord.z > depth + 0.0015) ? 0.7 : 1.0;
+    gl_FragColor = vec4(v_color.rgb * visibility, v_color.a);
+
+  }
+</script>
+
+<script>
+
+  var pfgl = new PFGL('#canvas1');
+  var gl = pfgl.gl;
+
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.enable(gl.DEPTH_TEST);
+
+  var program1 = pfgl.shader(document.querySelector('#v1').innerText, document.querySelector('#high-f1').innerText);
+  var program2 = pfgl.shader(document.querySelector('#v2').innerText, document.querySelector('#high-f2').innerText);
+
+  var triangle = {
+    vertices: new Float32Array([-0.8, 3.5, 0.0,  0.8, 3.5, 0.0,  0.0, 3.5, 1.8]),
+    colors: new Float32Array([1, 1, 0.2,  1, 1, 0.2,  1, 1, 0.2]),
+    indices: new Uint8Array([0, 1, 2])
+  };
+
+  var plane = {
+    vertices: new Float32Array([3.0, -1.7, 2.5,  -3.0, -1.7, 2.5,  -3.0, -1.7, -2.5,   3.0, -1.7, -2.5]),
+    colors: new Float32Array([1.0, 1.0, 1.0,    1.0, 1.0, 1.0,  1.0, 1.0, 1.0,   1.0, 1.0, 1.0]),
+    indices: new Uint8Array([0, 1, 2,   0, 2, 3])
+  };
+
+  var unionCube = {
+    vertices: new Float32Array([
+      1.0, 1.0, 1.0,  -1.0, 1.0, 1.0,  -1.0,-1.0, 1.0,   1.0,-1.0, 1.0,
+      1.0,-1.0,-1.0,   1.0, 1.0,-1.0,  -1.0, 1.0,-1.0,  -1.0,-1.0,-1.0
+    ]),
+    colors: new Float32Array([
+      1, 1, 1,   1, 1, 1,   1, 1, 1,  1, 1, 1,
+      1, 1, 1,   1, 1, 1,   1, 1, 1,  1, 1, 1
+    ]),
+    indices: new Uint8Array([
+      0, 1, 2,  0, 2, 3,
+      0, 3, 4,  0, 4, 5,
+      0, 5, 6,  0, 6, 1,
+      1, 6, 7,  1, 7, 2,
+      2, 7, 4,  2, 4, 3,
+      5, 6, 7,  5, 7, 4
+    ])
+  };
+
+  var shadowMappingAnimationFrameID = 0;
+
+  var ANGLE_STEP = 40;
+  var last = Date.now();
+
+  shadowMapping();
+
+  function animate(angle){
+    var now = Date.now();
+    var elapsed = now - last;
+    last = now;
+    var newAngle = angle + (ANGLE_STEP * elapsed) / 1000.0;
+    return newAngle % 360;
+  }
+
+
+  function shadowMapping(){
+
+    cancelAnimationFrame(shadowMappingAnimationFrameID);
+
+    var OFFSCREEN_WIDTH = 2048, OFFSCREEN_HEIGHT = 2048;
+
+    var modelMatInLight_t = mat4.create();
+
+    var modelMatInLight_p = mat4.create();
+    mat4.rotate(modelMatInLight_p, modelMatInLight_p, -30 * Math.PI / 180, vec3.fromValues(0, 1, 1));
+
+    var lightPosition = vec3.fromValues(0, 7, 2);
+
+    var eye = vec3.fromValues(0, 7, 9);
+    var center = vec3.fromValues(0, 0, 0);
+    var up = vec3.fromValues(0, 1, 0);
+    var viewMat = mat4.lookAt(mat4.create(), eye, center, up);
+
+    var viewMatInLight = mat4.lookAt(mat4.create(), lightPosition, center, up);
+
+    var projMat = mat4.perspective(mat4.create(), glMatrix.toRadian(90), 1, 1, 100);
+
+    var mvpMat = mat4.create();
+    mat4.mul(mvpMat, projMat, viewMat);
+
+    var mvpMatInLight_t = mat4.create();
+
+    var mvpMatInLight_p = mat4.create();
+    mat4.mul(mvpMatInLight_p, projMat, viewMatInLight);
+    mat4.mul(mvpMatInLight_p, mvpMatInLight_p, modelMatInLight_p);
+
+    var offScreen = pfgl.frameBuffer(OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT);
+
+    var textureUnit = 0;
+    gl.activeTexture(gl.TEXTURE0 + textureUnit);
+    gl.bindTexture(gl.TEXTURE_2D, offScreen.texture);
+
+    var angle = 0.0;
+
+    draw();
+
+    function draw(){
+
+      angle = animate(angle);
+
+      //off screen
+      gl.bindFramebuffer(gl.FRAMEBUFFER, offScreen.frameBuffer);
+      gl.viewport(0, 0, OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      pfgl.useProgram(program1);
+
+      //triangle
+      pfgl.attribute('a_position', triangle.vertices);
+
+
+      modelMatInLight_t = mat4.create();
+      //mat4.translate(modelMatInLight_t, modelMatInLight_t, vec3.fromValues(0, 2, 0));
+      mat4.rotate(modelMatInLight_t, modelMatInLight_t, angle * Math.PI / 180, vec3.fromValues(0, 1, 0));
+
+      mat4.mul(mvpMatInLight_t, projMat, viewMatInLight);
+      mat4.mul(mvpMatInLight_t, mvpMatInLight_t, modelMatInLight_t);
+      pfgl.uniform('u_mvpMat', mvpMatInLight_t);
+
+      pfgl.drawElements(gl.TRIANGLES, triangle.indices, gl.UNSIGNED_BYTE, 0);
+
+      //plane
+      pfgl.attribute('a_position', plane.vertices);
+
+      pfgl.uniform('u_mvpMat', mvpMatInLight_p);
+
+      pfgl.drawElements(gl.TRIANGLES, plane.indices, gl.UNSIGNED_BYTE, 0);
+
+
+      //with shadow
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      pfgl.useProgram(program2);
+      pfgl.uniform('u_shadowMap', textureUnit);
+
+      //triangle
+      pfgl.attribute('a_position', triangle.vertices);
+      pfgl.attribute('a_color', triangle.colors);
+
+      mvpMat = mat4.create();
+      mat4.mul(mvpMat, projMat, viewMat);
+      mat4.mul(mvpMat, mvpMat, modelMatInLight_t);
+
+      pfgl.uniform('u_mvpMat', mvpMat);
+      pfgl.uniform('u_mvpMatInLight', mvpMatInLight_t);
+
+      pfgl.drawElements(gl.TRIANGLES, triangle.indices, gl.UNSIGNED_BYTE, 0);
+
+      //plane
+      pfgl.attribute('a_position', plane.vertices);
+      pfgl.attribute('a_color', plane.colors);
+
+      mvpMat = mat4.create();
+      mat4.mul(mvpMat, projMat, viewMat);
+      mat4.mul(mvpMat, mvpMat, modelMatInLight_p);
+
+      pfgl.uniform('u_mvpMat', mvpMat);
+      pfgl.uniform('u_mvpMatInLight', mvpMatInLight_p);
+
+      pfgl.drawElements(gl.TRIANGLES, plane.indices, gl.UNSIGNED_BYTE, 0);
+
+      shadowMappingAnimationFrameID = requestAnimationFrame(draw);
+
+    }
+
+  }
+
+</script>
+
+</body>
+</html>

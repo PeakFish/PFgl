@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>teapot</title>
+</head>
+<body>
+
+<p>
+  <input type="checkbox" id="anim" onchange="setAnimating(this.checked)">
+  <label for="anim">Animate</label>
+  <button onclick="rotator.setView( [0,0,16], [0,1,0] ); frameNumber = 0; render()" style="margin-left:2cm">Reset View</button>
+  <span style="margin-left:1.5cm">Lights:</span>
+  <input type=checkbox id="l0" onchange="pfgl.uniform('light[0].enabled', Number(this.checked)); render()">
+  <label for="l0">0</label>
+  <input type=checkbox id="l1" onchange="pfgl.uniform('light[1].enabled', Number(this.checked)); render()">
+  <label for="l1">1</label>
+  <input type=checkbox id="l2" onchange="pfgl.uniform('light[2].enabled', Number(this.checked)); render()">
+  <label for="l2">2</label>
+  <input type=checkbox id="l3" onchange="pfgl.uniform('light[3].enabled', Number(this.checked)); render()">
+  <label for="l3">3</label>
+</p>
+
+
+<canvas width="600" height="600" id="glcanvas"></canvas>
+<p>
+  <a target="_blank" href="http://math.hws.edu/eck/cs424/notes2013/webgl/webgl-light-and-material.html">math.hws.edu/eck/cs424/notes2013</a>
+</p>
+
+
+
+<script type="x-shader/x-vertex" id="vshader">
+  attribute vec3 coords;
+  attribute vec3 normal;
+  uniform mat4 modelview;
+  uniform mat4 projection;
+  varying vec3 viewCoords;
+  varying vec3 vNormal;
+  void main(){
+    vec4 tcoords = modelview*vec4(coords,1.0);
+    viewCoords = tcoords.xyz;
+    gl_Position = projection * tcoords;
+    vNormal = normal;
+  }
+</script>
+
+<script type="x-shader/x-fragment" id="fshader">
+  precision mediump float;
+  struct materialProperties {  // A type that defines the set of material properties.
+    vec3 ambient; 
+    vec3 diffuse; 
+    vec3 specular;
+    vec3 emissive;
+    float shininess;
+  };
+  struct lightProperties {  // A type that defines the set of light properties.
+    vec4 position;   // position.z == 0 for a directional light, and 1 for a positional light
+    vec3 intensity;  // This is the color, but not restricted to the range 0 to 1.
+    vec3 ambient;    // Amount added to global ambient when this light is enabled.
+    bool enabled;
+  };
+  uniform materialProperties frontMaterial; // material for front faces (and for back faces if twoSided is false)
+  uniform materialProperties backMaterial;  // material for back faces, used only if twoSided is true
+  materialProperties material; // This is the material that will actually be used on this fragment
+  uniform bool twoSided;  // If true, back faces will have a different material from front faces
+  uniform mat3 normalMatrix;  // Matrix for transforming the normal vector.
+  uniform lightProperties light[4];  // data for four lights
+  uniform bool lit; // If false, no lighting is done; instead the unmodified diffuse material color is used.
+  uniform vec3 globalAmbient; // amount of global ambient illumination, independent of the four lights.
+  varying vec3 viewCoords;    // position in viewing coordinates, used for lighting
+  varying vec3 vNormal;  // The interpolated normal vector.
+
+  vec3 lighting(vec3 vertex, vec3 V, vec3 N) {
+        // A function to compute the color of this fragment using the lighting equation.
+        // vertex contains the coords of the points; V is a unit vector pointing to viewer;
+        // N is the normal vector.  This function also uses the values in the global variables
+        // material and light[0]..light[3].
+    vec3 color = material.emissive + material.ambient * globalAmbient;
+    for (int i = 0; i < 4; i++) {
+        if (light[i].enabled) {
+            color += material.ambient * light[i].ambient;
+            vec3 L;
+            if (light[i].position.w == 0.0)
+               L = normalize( light[i].position.xyz );
+            else
+               L = normalize( light[i].position.xyz/light[i].position.w - vertex );
+            if ( dot(L,N) > 0.0) {
+               vec3 R;
+               R = (2.0*dot(N,L))*N - L;
+               color += dot(N,L)*(light[i].intensity*material.diffuse);
+               if ( dot(V,R) > 0.0)
+                  color += pow(dot(V,R),material.shininess) * (light[i].intensity * material.specular);
+            }
+        }
+    }
+    return color;
+  }
+
+  void main(){
+    if (lit) {
+       vec3 tnormal = normalize(normalMatrix*vNormal);
+       if (!gl_FrontFacing)
+           tnormal = -tnormal;
+       if ( gl_FrontFacing || !twoSided)
+          material = frontMaterial;
+       else
+          material = backMaterial;
+       gl_FragColor = vec4( lighting(viewCoords, normalize(-viewCoords),tnormal), 1.0 );
+    }
+    else {
+       if ( gl_FrontFacing || !twoSided )
+           gl_FragColor = vec4(frontMaterial.diffuse, 1.0);
+       else
+           gl_FragColor = vec4(backMaterial.diffuse, 1.0);
+    }
+  }
+</script>
+
+<script src="../pfgl.js"></script>
+<script src="js/lib/gl-matrix.js"></script>
+<script src="js/simple-rotator.js"></script>
+<script src="js/basic-objects-IFS.js"></script>
+
+<script type="text/javascript">
+
+"use strict";
+
+var pfgl;
+var gl;    // The webgl context.
+var prog;  // The shader program.
+
+var uLight; // Array of objects holding holding locations for light uniforms.
+
+var cylinderRender, sphereRender, teapotRender;  // Objects holding data for rendering objects.
+
+var projection = mat4.create();   // The projection transformation matrix.
+var modelview;  // The modelview matrix (to be created by the simpleRotator object, not by mat4).
+var normalMatrix = mat3.create();  // The matrix for transforming normal vectors.
+
+var rotator;  // a simple rotator object for rotating the scene as a whole.
+
+var frameNumber = 0;  // Frame number for animation.
+
+/**
+ * Draw the scene, consisting of a teapot on a base.  The teapot has specular reflection,
+ * the base does not.  Three spheres circle the teapot, with a point light at the same
+ * location of each sphere.  The spheres/lights are red, green, and blue.
+ */
+function render() {
+
+  gl.clearColor(0,0,0,1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  mat4.perspective(projection, Math.PI/3, 1, 1, 50);
+
+  pfgl.uniform('projection', projection);
+
+  modelview = rotator.getViewMatrix();
+
+  var saveMV = mat4.clone(modelview);
+
+  var pos = vec4.create(); // For setting the light positions
+
+  /* Draw the red light and the red sphere */
+  pfgl.uniform('frontMaterial.ambient', new Float32Array([0.2, 0, 0]));
+  pfgl.uniform('frontMaterial.diffuse', new Float32Array([0.6, 0, 0]));
+  pfgl.uniform('frontMaterial.specular', new Float32Array([0, 0, 0]));
+
+  mat4.rotateX(modelview,modelview,(frameNumber+284)/127);
+  mat4.rotateY(modelview,modelview,(frameNumber+152)/87);
+  mat4.translate(modelview,modelview,[7,0,0]);
+  vec4.transformMat4(pos,[0,0,0,1],modelview);
+  // Note:  The light position must be transformed by the modelview matrix
+  // The value of the light position is the position in eye coordinates.
+  // Just like the sphere, the untransformed light position is (0,0,0).
+
+  pfgl.uniform('light[1].position', pos);
+
+  sphereRender();
+
+  /* Draw the green light and sphere. */
+
+  modelview = mat4.clone(saveMV);
+
+  pfgl.uniform('frontMaterial.ambient', new Float32Array([0, 0.2, 0]));
+  pfgl.uniform('frontMaterial.diffuse', new Float32Array([0, 0.6, 0]));
+  pfgl.uniform('frontMaterial.specular', new Float32Array([0, 0, 0]));
+
+  mat4.rotateX(modelview,modelview,frameNumber/110);
+  mat4.rotateY(modelview,modelview,frameNumber/93);
+  mat4.translate(modelview,modelview,[6,0,0]);
+  vec4.transformMat4(pos,[0,0,0,1],modelview);
+
+  pfgl.uniform('light[2].position', pos);
+
+  sphereRender();
+
+  /* Draw the blue light and sphere. */
+
+  modelview = mat4.clone(saveMV);
+
+  pfgl.uniform('frontMaterial.ambient', new Float32Array([0, 0, 0.2]));
+  pfgl.uniform('frontMaterial.diffuse', new Float32Array([0, 0, 0.6]));
+  pfgl.uniform('frontMaterial.specular', new Float32Array([0, 0, 0]));
+
+  mat4.rotateX(modelview,modelview,(frameNumber+35)/91);
+  mat4.rotateY(modelview,modelview,(frameNumber+183)/73);
+  mat4.translate(modelview,modelview,[8,0,0]);
+  vec4.transformMat4(pos,[0,0,0,1],modelview);
+
+  pfgl.uniform('light[3].position', pos);
+
+  sphereRender();
+
+  /* Draw the base. */
+
+  modelview = mat4.clone(saveMV);
+  mat4.translate(modelview,modelview,[0,-2.5,0]);
+  mat4.rotateX(modelview,modelview,Math.PI/2);
+
+  pfgl.uniform('frontMaterial.ambient', new Float32Array([0.1, 0.1, 0.1]));
+  pfgl.uniform('frontMaterial.diffuse', new Float32Array([0.6, 0.6, 0.6]));
+
+  cylinderRender();
+
+  /* Draw the teapot. */
+
+  modelview = saveMV;
+  mat4.scale(modelview,modelview, [0.3,0.3,0.3] );
+
+  pfgl.uniform('frontMaterial.specular', new Float32Array([0.3, 0.3, 0.3]));  // Specular reflection for the teapot.
+
+  teapotRender();
+
+}
+
+
+/**
+ *  Gets attribute and uniform locations and initializes uniform variables.
+ */
+function setUpAttribsAndUniforms() {
+
+  var identity4 = mat4.create();
+  var identity3 = mat3.create();
+
+  pfgl.uniform('projection', identity4);
+  pfgl.uniform('modelview', identity4);
+  pfgl.uniform('normalMatrix', identity3);
+
+  pfgl.uniform('lit', 1);
+  pfgl.uniform('twoSided', 0);
+
+  pfgl.uniform('globalAmbient', new Float32Array([1, 1, 1]));
+
+  pfgl.uniform('frontMaterial.ambient', new Float32Array([0.1, 0.1, 0.1]));
+  pfgl.uniform('frontMaterial.diffuse', new Float32Array([0.6, 0.6, 0.6]));
+  pfgl.uniform('frontMaterial.specular', new Float32Array([0.3, 0.3, 0.3]));
+  pfgl.uniform('frontMaterial.emissive', new Float32Array([0, 0, 0]));
+  pfgl.uniform('frontMaterial.shininess', 50.0, '1f');
+
+  pfgl.uniform('backMaterial.ambient', new Float32Array([0.1, 0.1, 0.1]));
+  pfgl.uniform('backMaterial.diffuse', new Float32Array([0.3, 0.6, 0.6]));
+  pfgl.uniform('backMaterial.specular', new Float32Array([0.3, 0.3, 0.3]));
+  pfgl.uniform('backMaterial.emissive', new Float32Array([0, 0, 0]));
+  pfgl.uniform('backMaterial.shininess', 50.0, '1f');
+
+  for(var i = 0; i < 4; i++){
+
+    pfgl.uniform('light[' + i + '].position', new Float32Array([0, 0, 1, 0]));
+    pfgl.uniform('light[' + i + '].ambient', new Float32Array([0, 0, 0]));
+
+
+    if (i == 0) {
+
+      pfgl.uniform('light[' + i + '].intensity', new Float32Array([1, 1, 1]));
+      pfgl.uniform('light[' + i + '].enabled', 1);
+
+    }else {
+
+      pfgl.uniform('light[' + i + '].intensity', new Float32Array([0, 0, 0]));
+      pfgl.uniform('light[' + i + '].enabled', 0);
+
+    }
+  }
+
+}
+
+/**
+ *  Create one of the basic objects.  The modelData holds the data for
+ *  an IFS using the structure from basic-objects-IFS.js.  This function
+ *  creates VBOs to hold the coordinates, normal vectors, and indices
+ *  from the IFS, and it loads the data into those buffers.  The function
+ *  creates a new object whose properties are the identifiers of the
+ *  VBOs.  The new object also has a function, render(), that can be called to
+ *  render the object, using all the data from the buffers.  That object
+ *  is returned as the value of the function. 
+ */
+function createModel(modelData) {
+
+    var coordsBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, modelData.vertexPositions);
+    var normalBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, modelData.vertexNormals);
+    var indexBuffer = pfgl.buildBuffer(gl.ELEMENT_ARRAY_BUFFER, modelData.indices);
+
+    var count = modelData.indices.length;
+
+    function render(){
+
+      pfgl.attribute('coords', coordsBuffer);
+      pfgl.attribute('normal', normalBuffer);
+
+      pfgl.uniform('modelview', modelview);
+
+      mat3.normalFromMat4(normalMatrix, modelview);
+
+      pfgl.uniform('normalMatrix', normalMatrix);
+
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+      gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, 0);
+
+    }
+
+    return render;
+}
+
+
+//--------------------------------- animation framework ------------------------------
+
+var animating = false;
+
+function frame() {
+    if (animating) {
+        frameNumber += 1;
+        //console.time('render');
+        render();
+        //console.timeEnd('render');
+        requestAnimationFrame(frame);
+    }
+}
+
+function setAnimating(run) {
+    if (run != animating) {
+        animating = run;
+        if (animating)
+            requestAnimationFrame(frame);
+    }
+}
+
+//-------------------------------------------------------------------------
+
+function init() {
+  //console.time('init');
+  pfgl = new PFGL('#glcanvas');
+  gl = pfgl.gl;
+
+  prog = pfgl.shader(document.querySelector('#vshader').innerText, document.querySelector('#fshader').innerText);
+
+  setUpAttribsAndUniforms();
+
+  // gl.enableVertexAttribArray(aCoords);  //won't change after initialization.//?
+  // gl.enableVertexAttribArray(aNormal);
+  gl.enable(gl.DEPTH_TEST);
+
+  sphereRender = createModel(uvSphere(0.3));
+  cylinderRender = createModel(uvCylinder(4,0.5,64));
+  teapotRender = createModel(teapotModel);
+
+  rotator = new SimpleRotator(gl.canvas,render);
+  rotator.setView( [0, 1, 2], [0,1,0], 16);
+  document.getElementById("anim").checked = true;
+  document.getElementById("l0").checked = true;
+  document.getElementById("l1").checked = true;
+  document.getElementById("l2").checked = true;
+  document.getElementById("l3").checked = true;
+
+  //Turn on lights 1,2, and 3 and set their colors.
+  pfgl.uniform('light[1].enabled', 1, '1f');
+  pfgl.uniform('light[1].intensity', new Float32Array([.5, 0, 0]));
+
+  pfgl.uniform('light[2].enabled', 1, '1f');
+  pfgl.uniform('light[2].intensity', new Float32Array([0, .5, 0]));
+
+  pfgl.uniform('light[3].enabled', 1, '1f');
+  pfgl.uniform('light[3].intensity', new Float32Array([0, 0, .5]));
+
+  setAnimating(true);
+  //console.timeEnd('init');
+}
+
+init();
+
+</script>
+</body>
+</html>

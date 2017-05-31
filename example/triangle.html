@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>triangle</title>
+</head>
+<body>
+
+<canvas width="600" height="600" id="canvas1"></canvas>
+
+<script src="../pfgl.js"></script>
+<script src="js/lib/gl-matrix.js"></script>
+<script src="js/PFgl.control.js"></script>
+
+<script type="x-shader/x-vertex" id="v1">
+  attribute vec4 a_position;
+  attribute vec4 a_color;
+
+  uniform mat4 u_modelMat;
+  uniform mat4 u_viewMat;
+  uniform mat4 u_projectionMat;
+
+  varying vec4 v_color;
+
+  void main(){
+
+    gl_Position = u_projectionMat * u_viewMat * u_modelMat * a_position;
+    v_color = a_color;
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="f1">
+  #ifdef GL_ES
+  precision mediump float;
+  #endif
+
+  varying vec4 v_color;
+
+  void main(){
+
+    gl_FragColor = v_color;
+
+  }
+</script>
+<script>
+
+  var pfgl = new PFGL('#canvas1');
+  var gl = pfgl.gl;
+
+  var program = pfgl.shader(document.querySelector('#v1').innerText, document.querySelector('#f1').innerText);
+
+
+  var verticesColors = new Float32Array([
+    0.0,  0.5, 0.0,    1.0, 0.0, 0.0,
+   -0.5, -0.5, 0.0,    0.0, 1.0, 0.0,
+    0.5, -0.5, 0.0,    0.0, 0.0, 1.0
+  ]);
+  var FSIZE = verticesColors.BYTES_PER_ELEMENT;
+
+  var attributes = [
+    {
+      name: 'a_position',
+      size: 3,
+      stride: 6 * FSIZE,
+      offset: 0 * FSIZE
+    },
+    {
+      name: 'a_color',
+      size: 3,
+      stride: 6 * FSIZE,
+      offset: 3 * FSIZE
+    }
+  ];
+
+  pfgl.attribute(attributes, verticesColors);
+
+  var modelMat = mat4.create();
+  mat4.scale(modelMat, modelMat, vec3.fromValues(5, 5, 5));
+  //mat4.translate(modelMat, modelMat, vec3.fromValues(5, 5, 5));
+
+  var eye = vec3.fromValues(0, 0, 10);
+  var center = vec3.fromValues(0, 0, -1);
+  var up = vec3.fromValues(0, 1, 0);
+  var viewMat = mat4.lookAt(mat4.create(), eye, center, up);
+
+  var projMat = mat4.perspective(mat4.create(), glMatrix.toRadian(45), 1, 0.1, 100);
+
+  draw();
+
+  function draw(){
+    pfgl.uniform('u_modelMat', modelMat);
+    pfgl.uniform('u_viewMat', viewMat);
+    pfgl.uniform('u_projectionMat', projMat);
+
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    //clean array buffer begin to draw
+    //gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+
+  PFGL.control(gl.canvas, draw, viewMat, eye, center, up);
+</script>
+
+</body>
+</html>

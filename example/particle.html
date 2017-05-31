@@ -1,0 +1,313 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>particle</title>
+</head>
+<body>
+
+<canvas width="600" height="600" id="particle"></canvas>
+
+<canvas style="display:none;" width="400" height="400" id="basicParticleSystemCanvas"></canvas>
+<!--<script src="js/particle.js"></script>-->
+
+
+<script src="../pfgl.js"></script>
+<script src="js/lib/gl-matrix.js"></script>
+
+<script type="x-shader/x-vertex" id="v1">
+  attribute vec4 a_position;
+  attribute float a_size;
+  attribute vec4 a_color;
+
+  uniform mat4 u_mvpMat;
+
+  varying vec4 v_color;
+
+  void main(){
+
+    gl_PointSize = a_size;
+    gl_Position = u_mvpMat * a_position;
+
+    v_color = a_color;
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="f1">
+  precision mediump float;
+
+  varying vec4 v_color;
+
+  void main(){
+
+    float d = distance(gl_PointCoord, vec2(0.5, 0.5));
+
+    if(d < 0.5){
+      gl_FragColor = v_color;
+    }else{
+      discard;
+    }
+
+  }
+</script>
+<script>
+//(function(){
+
+  var pfgl = new PFGL('#particle');
+  var gl = pfgl.gl;
+  pfgl.shader(document.querySelector('#v1').innerText, document.querySelector('#f1').innerText);
+
+
+  //传值给矩阵
+  var ModelMat = mat4.create();
+  mat4.scale(ModelMat, ModelMat, vec3.fromValues(0.005, 0.005, 0.005));
+  mat4.translate(ModelMat, ModelMat, vec3.fromValues(0, 0, 0));
+  //mat4.rotate(ModelMat, ModelMat, 133 * Math.PI / 180, vec3.fromValues(0, 1, 0));
+
+  var eye = vec3.fromValues(0, 0.1, 1);
+  var center = vec3.fromValues(0, 0, -5);
+  var up = vec3.fromValues(0, 1, 0);
+
+  var viewMat = mat4.create();
+  mat4.lookAt(viewMat, eye, center, up);
+
+  var projMat = mat4.create();
+  mat4.perspective(projMat, glMatrix.toRadian(45), 1, 0.1, 2000);
+  //mat4.ortho(projMat, -10.0, 10.0, -10.0, 10.0, -10.0, 1000.0);
+
+  var mvpMat = mat4.create();
+  mat4.mul(mvpMat, projMat, viewMat);
+  mat4.mul(mvpMat, mvpMat, ModelMat);
+
+  pfgl.uniform('u_mvpMat', mvpMat);
+
+
+  var ps = new ParticleSystem();
+  var dt = 0.01;
+
+  function render(){
+
+    var position = vec3.fromValues(0.0, 0.0, 0.0);
+    var velocity = sampleDirection3D();
+    vec3.scale(velocity, velocity, 100);
+
+    var color = vec3.fromValues(Math.random(), Math.random(), Math.random());
+    var size = Math.random() * 5;
+    var particle = new Particle(position, velocity, 1, color, size);
+
+    ps.emit(particle);
+    ps.simulate(dt);
+
+    var arr = ps.produceArr();
+    //console.log(arr);
+    //console.log(arr.length);
+
+    var FSIZE = arr.BYTES_PER_ELEMENT;
+
+    var attributes = [
+      {
+        name: 'a_position',
+        size: 3,
+        stride: 8 * FSIZE,
+        offset: 0 * FSIZE
+      },{
+        name: 'a_size',
+        size: 1,
+        stride: 8 * FSIZE,
+        offset: 3 * FSIZE
+      },
+      {
+        name: 'a_color',
+        size: 4,
+        stride: 8 * FSIZE,
+        offset: 4 * FSIZE
+      }
+    ];
+
+    pfgl.attribute(attributes, arr);
+
+    var count = arr.length / 8;
+
+    //绘制
+    gl.clearColor(1.0, 1.0, 1.0, 1.0);
+    gl.enable(gl.DEPTH_TEST);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+
+    gl.drawArrays(gl.POINTS, 0, count);
+
+    requestAnimationFrame(render);
+    //setTimeout(render, 100);
+
+  }
+
+  render();
+
+
+
+  //生成一个方向
+  function sampleDirection3D(){
+
+    //弧度
+    var theta1 = Math.random() * 1 * Math.PI;
+    var theta2 = Math.random() * 2 * Math.PI;
+
+    var sj = Math.sin(theta1);
+    var cj = Math.cos(theta1);
+
+    var si = Math.sin(theta2);
+    var ci = Math.cos(theta2);
+
+    var direction = vec3.fromValues(si * sj, cj, ci * sj);
+    //var direction = vec3.fromValues(ci, si, 0);
+
+    return direction;
+
+  }
+
+
+
+
+//********** tools **************
+function sphere(){
+
+  var SPHERE_DIV = 180;
+  var positions = [];
+
+  //Generate coordinates
+  for(var j = 0; j <= SPHERE_DIV; j++){
+
+    //aj 应该是个弧度值
+    var aj = j * (Math.PI / 180) * (180 * SPHERE_DIV);
+    //
+    var sj = Math.sin(aj);
+    var cj = Math.cos(aj);
+
+    for(i = 0; i <= SPHERE_DIV; i++){
+
+      var ai = i * 2 * Math.PI / SPHERE_DIV;
+      var si = Math.sin(ai);
+      var ci = Math.cos(ai);
+
+      positions.push(si * sj);  // X
+      positions.push(cj);       // Y
+      positions.push(ci * sj);  // Z
+
+    }
+  }
+
+  return new Float32Array(positions);
+
+}
+
+// Particle.js
+function Particle(position, velocity, life, color, size){
+  this.position = position;
+  this.velocity = velocity;
+  this.acceleration = vec3.create();
+  this.age = 0;
+  this.life = life;
+  this.color = color;
+  this.size = size;
+}
+
+// ParticleSystem.js
+function ParticleSystem(){
+  // Private fields
+  var that = this;
+  var particles = new Array();
+
+  // Public fields
+  this.gravity = vec3.fromValues(0, -100, 0);
+  this.effectors = new Array();
+
+  // Public methods
+  this.emit = function(particle){
+    particles.push(particle);
+  };
+
+  this.simulate = function(dt){
+    aging(dt);
+    applyGravity();
+    applyEffectors();
+    kinematics(dt);
+  };
+
+  this.produceArr = function(){
+
+    var out = new Array;
+
+    for(var i = 0; i < particles.length; i++){
+
+      var p = particles[i];
+
+      var alpha = 1 - p.age / p.life;
+      out.push(p.position[0], p.position[1], p.position[2]);
+      out.push(p.size);
+      out.push(p.color[0], p.color[1], p.color[2], alpha);
+
+    }
+
+    return new Float32Array(out);
+
+  };
+
+  // Private methods
+
+  function aging(dt){
+    for(var i = 0; i < particles.length; ){
+      var p = particles[i];
+      p.age += dt;
+      if (p.age >= p.life)
+        kill(i);
+      else
+        i++;
+    }
+  }
+
+  function kill(index){
+    //把当前的删除掉， 替换成最后一个，然后在删除掉复制完的那个。
+    if(particles.length > 1)
+      particles[index] = particles[particles.length - 1];
+    particles.pop();
+  }
+
+  function applyGravity(){
+    for (var i in particles)
+      particles[i].acceleration = that.gravity;
+  }
+
+  function applyEffectors(){
+    for(var j in that.effectors){
+      var apply = that.effectors[j].apply;
+      console.log(apply);
+      for(var i in particles)
+        apply(particles[i]);
+    }
+  }
+
+  function kinematics(dt){
+
+    for(var i in particles){
+
+      var p = particles[i];
+
+      //位置速度
+      var delteDist = vec3.scale(vec3.create(), p.velocity, dt);
+      vec3.add(p.position, p.position, delteDist);
+      //速度加速度
+      var delteVelocity = vec3.scale(vec3.create(), p.acceleration, dt);
+      vec3.add(p.velocity, p.velocity, delteVelocity);
+
+    }
+
+  }
+
+}
+
+
+//})();
+</script>
+
+</body>
+</html>

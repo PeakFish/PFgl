@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>stencilBuffer</title>
+</head>
+<body>
+
+<canvas width="600" height="600" id="canvas1"></canvas>
+
+<script src="../pfgl.js"></script>
+<script src="js/lib/gl-matrix.js"></script>
+
+<script type="x-shader/x-vertex" id="v1">
+  attribute vec4 a_position;
+
+  uniform mat4 u_mMat;
+  uniform mat4 u_vpMat;
+
+  void main(){
+
+    gl_Position = u_vpMat * u_mMat * a_position;
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="f1">
+  precision mediump float;
+  uniform vec4 u_color;
+  void main(){
+
+    gl_FragColor = u_color;
+
+  }
+</script>
+<script>
+
+  var pfgl = new PFGL('#canvas1', {stencil: true});
+  var gl = pfgl.gl;
+
+  var program = pfgl.shader(document.querySelector('#v1').innerText, document.querySelector('#f1').innerText);
+
+  gl.clearColor(1.0, 1.0, 1.0, 1.0);
+  gl.enable(gl.DEPTH_TEST);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+
+  var vertices = new Float32Array([
+    -1.0, 1.0, 0.0,   -1.0, -1.0, 0.0,    1.0, 1.0, 0.0,   1.0, -1.0, 0.0
+  ]);
+
+  pfgl.attribute('a_position', vertices);
+
+  var projMat = mat4.perspective(mat4.create(), glMatrix.toRadian(45), 1, 0.1, 2000);
+
+  var eye = vec3.fromValues(0, 0, 10);
+  var center = vec3.fromValues(0, 0, 0);
+  var up = vec3.fromValues(0, 1, 0);
+  var viewMat = mat4.lookAt(mat4.create(), eye, center, up);
+
+  var vpMat = mat4.create();
+  mat4.mul(vpMat, projMat, viewMat);
+
+  pfgl.uniform('u_vpMat', vpMat);
+
+
+  gl.enable(gl.STENCIL_TEST);
+  //设置比较函数 所有片段都要写入模板缓冲 值是1
+  gl.stencilFunc(gl.ALWAYS, 1, 0xFF);
+
+  //设置根据比较的结果操作的函数 操作的是模板缓冲区里的值
+  gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
+
+  //设置模板缓冲区的写入掩码:当为false时禁止在Stencil Buffer中写入(默认0xff)
+  gl.stencilMask(0xFF);
+  //gl.depthMask(false);
+  gl.clear(gl.STENCIL_BUFFER_BIT);
+
+
+  var modelMat2 = mat4.create();
+  //mat4.rotate(modelMat2, modelMat2, 30 * Math.PI / 180, vec3.fromValues(0, 0, 1));
+  mat4.scale(modelMat2, modelMat2, vec3.fromValues(2, 1, 1));
+  mat4.translate(modelMat2, modelMat2, vec3.fromValues(0, 0, -1));
+
+  pfgl.uniform('u_color', new Float32Array([0.0, 0.0, 1.0, 1.0]));
+  pfgl.uniform('u_mMat', modelMat2);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+
+  //second
+
+  gl.stencilFunc(gl.EQUAL, 1, 0xFF);
+  //gl.stencilOp(gl.KEEP, gl.REPLACE, gl.KEEP);
+  gl.stencilMask(0x00);
+  //gl.depthMask(true);
+
+
+  var modelMat = mat4.create();
+  mat4.scale(modelMat, modelMat, vec3.fromValues(1, 2, 1));
+
+  pfgl.uniform('u_color', new Float32Array([1.0, 0.0, 0.0, 1.0]));
+  pfgl.uniform('u_mMat', modelMat);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+
+</script>
+
+</body>
+</html>

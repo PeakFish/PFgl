@@ -1,0 +1,178 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>fog</title>
+</head>
+<body>
+
+<canvas width="600" height="600" id="canvas1"></canvas>
+
+<p>
+  <label for="">
+    fog distance
+    <input autofocus style="width:300px;" max="50" min="-50" value="0" step="1" id="fog-distance" type="range" />
+  </label>
+</p>
+
+<script src="../pfgl.js"></script>
+<script src="js/lib/gl-matrix.js"></script>
+
+<script type="x-shader/x-vertex" id="v1">
+  attribute vec4 a_position, a_color;
+
+  uniform mat4 u_vpMat, u_modelMat;
+  uniform vec3 u_eye;
+
+  varying vec4 v_color;
+  varying float v_dist;
+
+  void main(){
+
+    gl_Position = u_vpMat * u_modelMat * a_position;
+
+    v_color = a_color;
+    v_dist = distance(vec3(u_modelMat * a_position), u_eye);
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="f1">
+  precision mediump float;
+
+  uniform vec3 u_fogColor;
+  uniform vec2 u_fogDist;
+
+  varying vec4 v_color;
+  varying float v_dist;
+
+  void main(){
+
+    float fogFactor = clamp((u_fogDist.y - v_dist) / (u_fogDist.y - u_fogDist.x), 0.0, 1.0);
+    //mix 线性内插
+    vec3 color = mix(u_fogColor, vec3(v_color), fogFactor);
+    gl_FragColor = vec4(color, v_color.a);
+
+  }
+</script>
+<script type="x-shader/x-vertex" id="useW-v">
+  attribute vec4 a_position, a_color;
+
+  uniform mat4 u_mvpMat;
+
+  varying vec4 v_color;
+  varying float v_dist;
+
+  void main(){
+
+    gl_Postion = u_mvpMat * a_position;
+    v_color = a_color;
+    v_dist = gl_Position.w;
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="useW-f">
+  precision mediump float;
+
+  uniform vec3 u_fogColor;
+  uniform vec2 u_fogDist;
+
+  varying vec4 v_color;
+  varying float v_dist;
+
+  void main(){
+
+    float fogFactor = clamp((u_fogDist.y - v_dist) / (u_fogDist.y - u_fogDist.x), 0.0, 1.0);
+    vec3 color = mix(u_fogColor, vec3(v_color), fogFactor);
+    gl_FragColor = vec4(color, v_color.a);
+
+  }
+</script>
+<script>
+
+  var pfgl = new PFGL('#canvas1');
+  var gl = pfgl.gl;
+
+  var program = pfgl.shader(document.querySelector('#v1').innerText, document.querySelector('#f1').innerText);
+
+
+  var faceCube = {
+    vertices: new Float32Array([
+      1, 1, 1,  -1, 1, 1,  -1,-1, 1,   1,-1, 1,    // v0-v1-v2-v3 front
+      1, 1, 1,   1,-1, 1,   1,-1,-1,   1, 1,-1,    // v0-v3-v4-v5 right
+      1, 1, 1,   1, 1,-1,  -1, 1,-1,  -1, 1, 1,    // v0-v5-v6-v1 up
+     -1, 1, 1,  -1, 1,-1,  -1,-1,-1,  -1,-1, 1,    // v1-v6-v7-v2 left
+     -1,-1,-1,   1,-1,-1,   1,-1, 1,  -1,-1, 1,    // v7-v4-v3-v2 down
+      1,-1,-1,  -1,-1,-1,  -1, 1,-1,   1, 1,-1     // v4-v7-v6-v5 back
+    ]),
+    colors: new Float32Array([
+      0.4, 0.4, 1.0,  0.4, 0.4, 1.0,  0.4, 0.4, 1.0,  0.4, 0.4, 1.0,  // v0-v1-v2-v3 front
+      0.4, 1.0, 0.4,  0.4, 1.0, 0.4,  0.4, 1.0, 0.4,  0.4, 1.0, 0.4,  // v0-v3-v4-v5 right
+      1.0, 0.4, 0.4,  1.0, 0.4, 0.4,  1.0, 0.4, 0.4,  1.0, 0.4, 0.4,  // v0-v5-v6-v1 up
+      1.0, 1.0, 0.4,  1.0, 1.0, 0.4,  1.0, 1.0, 0.4,  1.0, 1.0, 0.4,  // v1-v6-v7-v2 left
+      1.0, 1.0, 1.0,  1.0, 1.0, 1.0,  1.0, 1.0, 1.0,  1.0, 1.0, 1.0,  // v7-v4-v3-v2 down
+      0.4, 1.0, 1.0,  0.4, 1.0, 1.0,  0.4, 1.0, 1.0,  0.4, 1.0, 1.0   // v4-v7-v6-v5 back
+    ]),
+    indices: new Uint8Array([
+       0, 1, 2,   0, 2, 3,    // front
+       4, 5, 6,   4, 6, 7,    // right
+       8, 9,10,   8,10,11,    // up
+      12,13,14,  12,14,15,    // left
+      16,17,18,  16,18,19,    // down
+      20,21,22,  20,22,23     // back
+    ])
+  };
+
+  var fogColor = vec3.fromValues(0.137, 0.231, 0.423);
+  fogColor = vec3.fromValues(0, 0, 0);
+  fogColor = vec3.fromValues(1, 1, 1);
+  var fogDist = vec2.fromValues(55, 80);
+
+
+  pfgl.attribute('a_position', faceCube.vertices);
+  pfgl.attribute('a_color', faceCube.colors);
+
+
+  var modelMat = mat4.create();
+  mat4.scale(modelMat, modelMat, vec3.fromValues(10, 10, 10));
+
+  var eye = vec3.fromValues(25, 65, 35);
+  var center = vec3.fromValues(0, 2, 0);
+  var up = vec3.fromValues(0, 1, 0);
+  var viewMat = mat4.lookAt(mat4.create(), eye, center, up);
+
+  var projMat = mat4.perspective(mat4.create(), glMatrix.toRadian(45), 1, 0.1, 1000);
+
+  var vpMat = mat4.create();
+  mat4.mul(vpMat, projMat, viewMat);
+
+  pfgl.uniform('u_eye', eye);
+  pfgl.uniform('u_modelMat', modelMat);
+  pfgl.uniform('u_vpMat', vpMat);
+
+  pfgl.uniform('u_fogColor', fogColor);
+  pfgl.uniform('u_fogDist', fogDist);
+
+  gl.clearColor(fogColor[0], fogColor[1], fogColor[2], 1.0);
+  gl.enable(gl.DEPTH_TEST);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  pfgl.buildBuffer(gl.ELEMENT_ARRAY_BUFFER, faceCube.indices);
+  gl.drawElements(gl.TRIANGLES, faceCube.indices.length, gl.UNSIGNED_BYTE, 0);
+
+
+  var fogDistance = document.querySelector('#fog-distance');
+  fogDistance.addEventListener('change', function(){
+
+    var dist = vec2.create();
+    vec2.add(dist, fogDist, vec2.fromValues(0, this.value));
+
+    pfgl.uniform('u_fogDist', dist);
+    gl.drawElements(gl.TRIANGLES, faceCube.indices.length, gl.UNSIGNED_BYTE, 0);
+
+  }, false);
+
+
+</script>
+
+</body>
+</html>

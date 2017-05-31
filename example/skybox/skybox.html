@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<title>skybox</title>
+</head>
+<body>
+
+<canvas width="600" height="600" id="glcanvas"></canvas>
+
+<p>
+  <a target="_blank" href="http://math.hws.edu/eck/cs424/notes2013/webgl/skybox-and-reflection/skybox.html">math.hws.edu/eck/cs424/notes2013</a>
+</p>
+
+<script type="x-shader/x-vertex" id="vshader">
+  attribute vec3 coords;
+
+  uniform mat4 projection, modelview;
+
+  varying vec3 vCoords;
+
+  void main(){
+
+    vec4 eyeCoords = modelview * vec4(coords, 1.0);
+    gl_Position = projection * eyeCoords;
+    vCoords = coords;//gl_Position.xyz;
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="fshader">
+  precision mediump float;
+
+  uniform samplerCube skybox;
+
+  varying vec3 vCoords;
+
+  void main(){
+
+    gl_FragColor = textureCube(skybox, vCoords);
+    // gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+
+  }
+</script>
+
+<script src="../../pfgl.js"></script>
+<script src="../js/lib/gl-matrix.js"></script>
+<script src="../js/simple-rotator.js"></script>
+<script src="../js/basic-objects-IFS.js"></script>
+
+<script type="text/javascript">
+
+  "use strict";
+
+  var pfgl = new PFGL('#glcanvas');
+  var gl = pfgl.gl;
+  pfgl.shader(document.getElementById('vshader').innerText, document.getElementById('fshader').innerText);
+
+  var projection = mat4.create();   // projection matrix
+  var modelview;    // modelview matrix
+
+  var rotator = new SimpleRotator(gl.canvas, draw);
+  rotator.setView([0, 0, 1], [0, 1, 0], 5);
+
+  var modelData = cube(200);
+
+  var urls = [
+    '../img/skybox/posx.jpg', '../img/skybox/negx.jpg',
+    '../img/skybox/posy.jpg', '../img/skybox/negy.jpg',
+    '../img/skybox/posz.jpg', '../img/skybox/negz.jpg'
+  ];
+
+
+
+  Promise.all(urls.map((v, i) => {
+
+    return PFGL.loadImg(v);
+
+  })).then((a) => {
+
+    pfgl.textureCube(a, 8);
+
+    pfgl.uniform('skybox', 8);
+
+    draw();
+
+    a.forEach((v, i) => {
+      console.log(v[0].src);
+    });
+
+  });
+
+  /*
+  pfgl.textureCube(urls).then(function(a){
+
+    pfgl.uniform('skybox', textureUnit);
+    draw();
+
+  });
+  */
+  var count = modelData.indices.length;
+
+  var coordsBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, modelData.vertexPositions);
+  var indexBuffer = pfgl.buildBuffer(gl.ELEMENT_ARRAY_BUFFER, modelData.indices);
+
+  function draw(){
+
+    gl.enable(gl.DEPTH_TEST);
+    gl.clearColor(0,0,0,1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    mat4.perspective(projection, Math.PI/3, gl.canvas.width/gl.canvas.height, 50, 200);
+
+    pfgl.uniform('projection', projection);
+
+    modelview = rotator.getViewMatrix();
+
+    pfgl.attribute('coords', coordsBuffer);
+
+    pfgl.uniform('modelview', modelview);
+
+    //gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
+    gl.drawElements(gl.TRIANGLES, count, gl.UNSIGNED_SHORT, 0);
+
+  }
+
+</script>
+
+</body>
+</html>

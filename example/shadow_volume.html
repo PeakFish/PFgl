@@ -1,0 +1,152 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>shadow</title>
+</head>
+<body>
+
+<canvas width="600" height="600" id="canvas1"></canvas>
+
+<script src="../pfgl.js"></script>
+<script src="js/lib/gl-matrix.js"></script>
+<script type="x-shader/x-vertex" id="v1">
+  attribute vec4 a_position;
+  attribute vec4 a_color;
+
+  uniform mat4 u_mvpMat;
+
+  varying vec4 v_color;
+
+  void main(){
+
+    gl_Position = u_mvpMat * a_position;
+    v_color = a_color;
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="f1">
+  precision mediump float;
+
+  varying vec4 v_color;
+
+  void main(){
+
+    gl_FragColor = v_color;
+
+  }
+</script>
+<script>
+
+  var pfgl = new PFGL('#canvas1', {stencil: true});
+  var gl = pfgl.gl;
+
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.enable(gl.DEPTH_TEST);
+
+  var program1 = pfgl.shader(document.querySelector('#v1').innerText, document.querySelector('#f1').innerText);
+
+
+  var triangle = {
+    vertices: new Float32Array([-0.8, 3.5, 0.0,  0.8, 3.5, 0.0,  0.0, 3.5, 1.8]),
+    colors: new Float32Array([1, 1, 0.2,  1, 1, 0.2,  1, 1, 0.2]),
+    indices: new Uint8Array([0, 1, 2])
+  };
+
+  var plane = {
+    vertices: new Float32Array([3.0, -1.7, 2.5,  -3.0, -1.7, 2.5,  -3.0, -1.7, -2.5,   3.0, -1.7, -2.5]),
+    colors: new Float32Array([1.0, 1.0, 1.0,    1.0, 1.0, 1.0,  1.0, 1.0, 1.0,   1.0, 1.0, 1.0]),
+    indices: new Uint8Array([0, 1, 2,   0, 2, 3])
+  };
+
+  var unionCube = {
+    vertices: new Float32Array([
+      1.0, 1.0, 1.0,  -1.0, 1.0, 1.0,  -1.0,-1.0, 1.0,   1.0,-1.0, 1.0,
+      1.0,-1.0,-1.0,   1.0, 1.0,-1.0,  -1.0, 1.0,-1.0,  -1.0,-1.0,-1.0
+    ]),
+    colors: new Float32Array([
+      1, 1, 1,   1, 1, 1,   1, 1, 1,  1, 1, 1,
+      1, 1, 1,   1, 1, 1,   1, 1, 1,  1, 1, 1
+    ]),
+    indices: new Uint8Array([
+      0, 1, 2,  0, 2, 3,
+      0, 3, 4,  0, 4, 5,
+      0, 5, 6,  0, 6, 1,
+      1, 6, 7,  1, 7, 2,
+      2, 7, 4,  2, 4, 3,
+      5, 6, 7,  5, 7, 4
+    ])
+  };
+
+
+
+  var shadowVolumeAnimationFrameID = 0;
+
+  var ANGLE_STEP = 40;
+  var last = Date.now();
+
+  shadowVolume();
+
+  function animate(angle){
+    var now = Date.now();
+    var elapsed = now - last;
+    last = now;
+    var newAngle = angle + (ANGLE_STEP * elapsed) / 1000.0;
+    return newAngle % 360;
+  }
+
+  function shadowVolume(){
+
+    cancelAnimationFrame(shadowVolumeAnimationFrameID);
+
+    var OFFSCREEN_WIDTH = 2048, OFFSCREEN_HEIGHT = 2048;
+
+    //depth map
+    var offScreen = pfgl.frameBuffer(OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT);
+
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    var modelMat = mat4.create();
+    var eye = vec3.fromValues(0, 7, 9);
+    var center = vec3.fromValues(0, 0, 0);
+    var up = vec3.fromValues(0, 1, 0);
+    var viewMat = mat4.lookAt(mat4.create(), eye, center, up);
+    var projMat = mat4.perspective(mat4.create(), glMatrix.toRadian(45), 1, 1, 100);
+    var mvpMat = mat4.create();
+    mat4.mul(mvpMat, projMat, viewMat);
+    mat4.mul(mvpMat, mvpMat, modelMat);
+
+    pfgl.useProgram(program1);
+    pfgl.attribute('a_position', triangle.vertices);
+    pfgl.attribute('a_color', triangle.colors);
+
+    pfgl.uniform('u_mvpMat', mvpMat);
+    pfgl.drawElements(gl.TRIANGLES, triangle.indices, gl.UNSIGNED_BYTE, 0);
+
+    pfgl.attribute('a_position', plane.vertices);
+    pfgl.attribute('a_color', plane.colors);
+
+    pfgl.uniform('u_mvpMat', mvpMat);
+    pfgl.drawElements(gl.TRIANGLES, plane.indices, gl.UNSIGNED_BYTE, 0);
+
+
+    //disable z-buffer write
+    gl.depthMask(false);
+    gl.colorMask(false, false, false, false);
+
+    //enable stencil buffer write
+    gl.enable(gl.STENCIL_TEST);
+
+    //gl.stencilFuncSeparate();
+    //gl.stencilOpSeparate(gl.KEEP, gl.KEEP, gl.REPLACE);
+
+
+    //shadowVolumeAnimationFrameID = requestAnimationFrame(draw);
+
+  }
+
+
+</script>
+
+</body>
+</html>

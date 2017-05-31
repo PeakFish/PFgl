@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>sphere</title>
+</head>
+<body>
+
+<canvas width="600" height="600" id="canvas1"></canvas>
+
+
+<script type="x-shader/x-vertex" id="v1">
+  attribute vec4 a_position;
+  attribute vec4 a_color;
+
+  uniform mat4 u_mvpMat;
+
+  varying vec4 v_color;
+
+  void main(){
+
+    gl_PointSize = 1.0;
+    gl_Position = u_mvpMat * a_position;
+
+    v_color = a_color;
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="f1">
+  precision mediump float;
+
+  varying vec4 v_color;
+
+  void main(){
+
+    gl_FragColor = v_color;
+    gl_FragColor = vec4(0.5, 0.5, 0.5, 1);
+
+  }
+</script>
+<script type="x-shader/x-vertex" id="v2">
+  attribute vec4 a_position;
+  // attribute vec4 a_Color; // Defined constant in main()
+  attribute vec4 a_normal;
+  uniform mat4 u_mvpMat;
+  uniform mat4 u_modelMat;    // Model matrix
+  uniform mat4 u_normalMat;   // Transformation matrix of the normal
+
+  varying vec4 v_color;
+  varying vec3 v_normal;
+  varying vec3 v_position;
+
+  void main(){
+
+    vec4 color = vec4(1.0, 1.0, 1.0, 1.0); // Sphere color
+    gl_Position = u_mvpMat * a_position;
+    // Calculate the vertex position in the world coordinate
+    v_position = vec3(u_modelMat * a_position);
+    v_normal = normalize(vec3(u_normalMat * a_normal));
+    v_color = color;
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="f2">
+  precision mediump float;
+
+  uniform vec3 u_lightColor;     // Light color
+  uniform vec3 u_lightPosition;  // Position of the light source
+  uniform vec3 u_ambientLight;   // Ambient light color
+
+  varying vec3 v_normal;
+  varying vec3 v_position;
+  varying vec4 v_color;
+
+  void main(){
+
+    // Normalize the normal because it is interpolated and not 1.0 in length any more
+    vec3 normal = normalize(v_normal);
+    // Calculate the light direction and make it 1.0 in length
+    vec3 lightDirection = normalize(u_lightPosition - v_position);
+    // The dot product of the light direction and the normal
+    float nDotL = max(dot(lightDirection, normal), 0.0);
+    // Calculate the final color from diffuse reflection and ambient reflection
+    vec3 diffuse = u_lightColor * v_color.rgb * nDotL;
+    vec3 ambient = u_ambientLight * v_color.rgb;
+    gl_FragColor = vec4(diffuse + ambient, v_color.a);
+
+  }
+</script>
+
+<script src="../pfgl.js"></script>
+<script src="js/lib/gl-matrix.js"></script>
+<script src="js/basic-objects-IFS.js"></script>
+
+<script>
+
+  var pfgl = new PFGL('#canvas1');
+  var gl = pfgl.gl;
+  var program1 = pfgl.shader(document.querySelector('#v1').innerText, document.querySelector('#f1').innerText);
+  var program2 = pfgl.shader(document.querySelector('#v2').innerText, document.querySelector('#f2').innerText);
+
+
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.enable(gl.DEPTH_TEST);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  var sphere = genSphere();
+  // var sphere = circle();
+  // var sphere = uvSphere();
+  // sphere.positions = sphere.vertexPositions;
+
+
+
+  var modelMat = mat4.create();
+  // mat4.rotate(modelMat, modelMat, 60 * Math.PI / 180, vec3.fromValues(0, 1, 0));
+
+  var eye = vec3.fromValues(0, 0, 6);
+  var center = vec3.fromValues(0, 0, 0);
+  var up = vec3.fromValues(0, 1, 0);
+  var viewMat = mat4.lookAt(mat4.create(), eye, center, up);
+
+  var projMat = mat4.create();
+  mat4.perspective(projMat, 45, 1, 1, 100);
+  //var projMat = (new Matrix4).setOrtho(-10.0, 10.0, -10.0, 10.0, -10.0, 1000.0);
+
+  var mvpMat = mat4.create();
+  mat4.mul(mvpMat, projMat, viewMat);
+  // mat4.mul(mvpMat, mvpMat, modelMat);
+  mat4.mul(mvpMat, mvpMat, mat4.invert(mat4.create(), modelMat));
+
+
+  drawStereoscopic();
+
+
+  function drawFlat(){
+
+    pfgl.useProgram(program1);
+    pfgl.attribute('a_position', sphere.positions);
+
+    pfgl.uniform('u_mvpMat', mvpMat);
+
+    // pfgl.drawElements(gl.TRIANGLES, sphere.indices, gl.UNSIGNED_SHORT, 0);
+    gl.drawArrays(gl.POINTS, 0, sphere.positions.length/3);
+
+  }
+
+
+  function drawStereoscopic(){
+
+    pfgl.useProgram(program2);
+    pfgl.attribute('a_position', sphere.positions);
+    pfgl.attribute('a_normal', sphere.positions);
+
+    pfgl.uniform('u_mvpMat', mvpMat);
+    pfgl.uniform('u_modelMat', modelMat);
+    pfgl.uniform('u_normalMat', modelMat);
+
+    pfgl.uniform('u_lightColor', vec3.fromValues(0.8, 0.8, 0.8));
+    pfgl.uniform('u_lightPosition', vec3.fromValues(5.0, 8.0, 7.0));
+    pfgl.uniform('u_ambientLight', vec3.fromValues(0.2, 0.2, 0.2));
+
+    // pfgl.drawElements(gl.TRIANGLES, sphere.indices, gl.UNSIGNED_BYTE, 0);
+    pfgl.buildBuffer(gl.ELEMENT_ARRAY_BUFFER, sphere.indices);
+    gl.drawElements(gl.TRIANGLES, sphere.indices.length, gl.UNSIGNED_SHORT, 0);
+
+  }
+
+
+  function genSphere(){
+
+    var SPHERE_DIV = 13;
+    SPHERE_DIV = 20;
+
+    var sphere = {};
+    sphere.positions = [];
+    sphere.indices = [];
+
+    //球的参数方程
+    //Generate coordinates
+    for(var j = 0; j <= SPHERE_DIV; j++){
+      //aj 应该是个弧度值
+      var aj = j * Math.PI / SPHERE_DIV;
+      var sj = Math.sin(aj);
+      var cj = Math.cos(aj);
+      for(i = 0; i <= SPHERE_DIV; i++){
+        var ai = i * 2 * Math.PI / SPHERE_DIV;
+        var si = Math.sin(ai);
+        var ci = Math.cos(ai);
+
+        sphere.positions.push(si * sj);  // X
+        sphere.positions.push(cj);       // Y
+        sphere.positions.push(ci * sj);  // Z
+      }
+    }
+
+    // Generate indices
+    for (var j = 0; j < SPHERE_DIV; j++) {
+      for (var i = 0; i < SPHERE_DIV; i++) {
+        var p1 = j * (SPHERE_DIV+1) + i;
+        var p2 = p1 + (SPHERE_DIV+1);
+
+        sphere.indices.push(p1);
+        sphere.indices.push(p2);
+        sphere.indices.push(p1 + 1);
+
+        sphere.indices.push(p1 + 1);
+        sphere.indices.push(p2);
+        sphere.indices.push(p2 + 1);
+      }
+    }
+
+    sphere.positions = new Float32Array(sphere.positions);
+    // sphere.indices = new Uint8Array(sphere.indices);
+    sphere.indices = new Uint16Array(sphere.indices);
+
+    return sphere;
+
+  }
+
+  function circle(){
+
+    var circle = {};
+    var positions = [];
+
+    var r = 1;
+
+    for(var i = 0; i < 360; i += 1){
+
+      var rad = i * Math.PI / 180;
+      var x = Math.cos(rad) * r;
+      var y = Math.sin(rad) * r;
+      positions.push(x, y, 1);
+
+    }
+
+    circle.positions = new Float32Array(positions)
+
+    return circle;
+
+  }
+
+
+</script>
+
+</body>
+</html>

@@ -1,0 +1,428 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>shadow</title>
+</head>
+<body>
+
+<canvas width="512" height="512" id="canvas1"></canvas>
+<p>
+  <button onclick="animateDraw()">animate</button>
+  <button onclick="cancelAnimationFrame(shadowMappingAnimationFrameID)">stop</button>
+</p>
+
+<script src="js/lib/gl-matrix.js"></script>
+<script src="../pfgl.js"></script>
+<script src="js/pfgl.control.js"></script>
+<script src="js/basic-objects-IFS.js"></script>
+
+
+
+<script type="x-shader/x-vertex" id="shadowMapGen_vs">
+  precision mediump float;
+
+  attribute vec3 a_position;
+
+  uniform mat4 u_modelMat, u_viewMat, u_projMat;
+
+  varying vec3 v_position;
+
+  void main(){
+
+    gl_Position = u_projMat * u_viewMat * u_modelMat * vec4(a_position, 1.0);
+
+    v_position = vec3(u_modelMat * vec4(a_position, 1.0));
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="shadowMapGen_fs">
+  precision mediump float;
+
+  uniform vec3 u_pointLightPosition;
+
+  varying vec3 v_position;
+
+  vec4 packDepth(const in float depth){
+    const vec4 bitShift = vec4(1.0, 256.0, 256.0 * 256.0, 256.0 * 256.0 * 256.0);
+    const vec4 bitMask = vec4(1.0 / 256.0, 1.0 / 256.0, 1.0 / 256.0, 0.0);
+    //fract 取小数部分
+    vec4 rgbaDepth = fract(depth * bitShift);
+    //减去过高的精度
+    rgbaDepth -= rgbaDepth.gbaa * bitMask;
+    return rgbaDepth;
+  }
+
+  void main(){
+
+    vec3 fromLightToFrag = v_position - u_pointLightPosition;
+
+    float lightFragDist = (length(fromLightToFrag) - 1.0) / (1000.0 - 1.0);
+
+    gl_FragColor = packDepth(lightFragDist);
+
+  }
+</script>
+
+<script type="x-shader/x-vertex" id="shadow_vs">
+  precision mediump float;
+
+  attribute vec3 a_position, a_color, a_normal;
+
+  uniform mat4 u_modelMat, u_viewMat, u_projMat;
+
+  varying vec3 v_modelPosition, v_color, v_normal;
+
+  void main(){
+
+    gl_Position = u_projMat * u_viewMat * u_modelMat * vec4(a_position, 1.0);
+
+    v_modelPosition = vec3(u_modelMat * vec4(a_position, 1.0));
+    v_color = a_color;
+    v_normal = a_normal;
+
+  }
+</script>
+<script type="x-shader/x-fragment" id="shadow_fs">
+  precision mediump float;
+
+  uniform vec3 u_pointLightPosition, u_pointLightColor, u_ambientLight;
+
+  uniform samplerCube u_shadowMap;
+
+  varying vec3 v_modelPosition, v_color, v_normal;
+
+  float unpackDepth(const in vec4 rgbaDepth){
+    const vec4 bitShift = vec4(1.0, 1.0 / 256.0, 1.0 / (256.0 * 256.0), 1.0 / (256.0 * 256.0 * 256.0));
+    float depth = dot(rgbaDepth, bitShift);
+    return depth;
+  }
+
+  void main(){
+
+    /*
+     * shadow
+     */
+    vec3 pos2Light = v_modelPosition - u_pointLightPosition;
+
+    float fromLightToFrag = (length(pos2Light)- 1.0) / (1000.0 - 1.0);
+
+    float shadowMapValue = unpackDepth(textureCube(u_shadowMap, pos2Light));
+
+
+
+    /*
+     * light
+     */
+    vec3 normal = normalize(v_normal);
+
+    vec3 pointLightDirection = normalize(u_pointLightPosition - v_modelPosition);
+
+    float nDotl = max(dot(pointLightDirection, normal), 0.0);
+
+    vec3 ambient = u_ambientLight * v_color;
+
+    if(fromLightToFrag > shadowMapValue + 0.0015){
+      //in shadow
+      gl_FragColor = vec4(v_color * 0.6, 1.0);
+    }else{
+      //out shadow
+      vec3 diffuse = u_pointLightColor * v_color * (0.6 + 0.4 * nDotl);
+
+      gl_FragColor = vec4(diffuse + ambient, 1.0);
+    }
+
+
+  }
+</script>
+
+<script>
+
+  var angle = 0.0;
+  var shadowMappingAnimationFrameID = 0;
+  var ANGLE_STEP = 40;
+  var last = Date.now();
+
+  var pfgl = new PFGL('#canvas1');
+  var gl = pfgl.gl;
+
+  gl.clearColor(0.0, 0.0, 0.0, 1.0);
+  gl.enable(gl.DEPTH_TEST);
+
+  var program1 = pfgl.shader(
+    document.querySelector('#shadowMapGen_vs').innerText,
+    document.querySelector('#shadowMapGen_fs').innerText
+  );
+  var program2 = pfgl.shader(
+    document.querySelector('#shadow_vs').innerText,
+    document.querySelector('#shadow_fs').innerText
+  );
+
+  /*
+   * mesh
+   */
+  var utah = {};
+  utah.vertices = teapotModel.vertexPositions;
+  utah.normals = teapotModel.vertexNormals;
+  setColor(utah, [1.0, 1.0, 1.0]);
+  utah.indices = teapotModel.indices;
+
+  var torus = uvTorus();
+  torus.vertices = torus.vertexPositions;
+  torus.normals = torus.vertexNormals;
+  setColor(torus, [1.0, 0.0, 1.0]);
+  torus.indices = torus.indices;
+
+  var bulb = uvSphere();
+  bulb.vertices = bulb.vertexPositions;
+  bulb.normals = bulb.vertexNormals.map((n) => -n);
+  setColor(bulb, [1.0, 1.0, 1.0]);
+  bulb.indices = bulb.indices;
+
+  var faceCube = {
+    vertices: new Float32Array([
+      1.0, 1.0, 1.0,  -1.0, 1.0, 1.0,  -1.0,-1.0, 1.0,   1.0,-1.0, 1.0,
+      1.0, 1.0, 1.0,   1.0,-1.0, 1.0,   1.0,-1.0,-1.0,   1.0, 1.0,-1.0,
+      1.0, 1.0, 1.0,   1.0, 1.0,-1.0,  -1.0, 1.0,-1.0,  -1.0, 1.0, 1.0,
+     -1.0, 1.0, 1.0,  -1.0, 1.0,-1.0,  -1.0,-1.0,-1.0,  -1.0,-1.0, 1.0,
+     -1.0,-1.0,-1.0,   1.0,-1.0,-1.0,   1.0,-1.0, 1.0,  -1.0,-1.0, 1.0,
+      1.0,-1.0,-1.0,  -1.0,-1.0,-1.0,  -1.0, 1.0,-1.0,   1.0, 1.0,-1.0
+    ]),
+    colors: new Float32Array([
+      0.4, 0.7, 0.9,    0.4, 0.7, 0.9,    0.4, 0.7, 0.9,    0.4, 0.7, 0.9,
+      0.7, 0.2, 0.1,    0.7, 0.2, 0.1,    0.7, 0.2, 0.1,    0.7, 0.2, 0.1,
+      1.0, 0.8, 0.3,    1.0, 0.8, 0.3,    1.0, 0.8, 0.3,    1.0, 0.8, 0.3,
+      0.1, 0.6, 0.4,    0.1, 0.6, 0.4,    0.1, 0.6, 0.4,    0.1, 0.6, 0.4,
+      0.7, 0.5, 1.0,    0.7, 0.5, 1.0,    0.7, 0.5, 1.0,    0.7, 0.5, 1.0,
+      1.0, 0.8, 0.7,    1.0, 0.8, 0.7,    1.0, 0.8, 0.7,    1.0, 0.8, 0.7
+    ]),
+    normals: new Float32Array([
+      0.0, 0.0, 1.0,   0.0, 0.0, 1.0,   0.0, 0.0, 1.0,   0.0, 0.0, 1.0,
+      1.0, 0.0, 0.0,   1.0, 0.0, 0.0,   1.0, 0.0, 0.0,   1.0, 0.0, 0.0,
+      0.0, 1.0, 0.0,   0.0, 1.0, 0.0,   0.0, 1.0, 0.0,   0.0, 1.0, 0.0,
+     -1.0, 0.0, 0.0,  -1.0, 0.0, 0.0,  -1.0, 0.0, 0.0,  -1.0, 0.0, 0.0,
+      0.0,-1.0, 0.0,   0.0,-1.0, 0.0,   0.0,-1.0, 0.0,   0.0,-1.0, 0.0,
+      0.0, 0.0,-1.0,   0.0, 0.0,-1.0,   0.0, 0.0,-1.0,   0.0, 0.0,-1.0
+    ]),
+    indices: new Uint8Array([
+       0, 1, 2,   0, 2, 3,
+       4, 5, 6,   4, 6, 7,
+       8, 9,10,   8,10,11,
+      12,13,14,  12,14,15,
+      16,17,18,  16,18,19,
+      20,21,22,  20,22,23
+    ])
+  };
+
+
+
+
+  var lightPosition = vec3.fromValues(0, 30, 30);
+  // vec3.scale(lightPosition, lightPosition, 3);
+
+  var eye = vec3.fromValues(0, 37, 180);
+  var center = vec3.fromValues(0, 0, 0);
+  var up = vec3.fromValues(0, 1, 0);
+
+  var viewMat = mat4.lookAt(mat4.create(), eye, center, up);
+
+  var projMat = mat4.perspective(mat4.create(), glMatrix.toRadian(45), 1, 1, 1000);
+  var shadowMapProjMat = mat4.perspective(mat4.create(), glMatrix.toRadian(90), 1, 1, 1000);
+
+
+  //utah
+  var modelMat_1 = mat4.create();
+  mat4.translate(modelMat_1, modelMat_1, vec3.fromValues(20, 0, 0));
+
+  //torus
+  var modelMat_2 = mat4.create();
+  mat4.translate(modelMat_2, modelMat_2, vec3.fromValues(-20, 0, 0));
+  mat4.scale(modelMat_2, modelMat_2, vec3.fromValues(18, 18, 18));
+  var clone_modelMat_2 = mat4.clone(modelMat_2);
+
+  //电灯泡
+  var modelMat_3 = mat4.create();
+  mat4.translate(modelMat_3, modelMat_3, lightPosition);
+
+
+  //盒子的模型矩阵
+  var modelMat_c = mat4.create();
+  mat4.scale(modelMat_c, modelMat_c, vec3.fromValues(80, 80, 80));
+  //mat4.translate(modelMat_c, modelMat_c, vec3.fromValues(0, 0, 0));
+  //mat4.rotate(modelMat_c, modelMat_c, glMatrix.toRadian(80), vec3.fromValues(1, 0, 0));
+
+  var textureUnit = 5;
+  var OFFSCREEN_WIDTH = 512, OFFSCREEN_HEIGHT = 512;
+  var offScreen = pfgl.frameBuffer(OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT, 3, textureUnit);
+
+  draw();
+  // animateDraw();
+  PFGL.control(gl.canvas, draw, viewMat, eye, center, up);
+
+  function draw(){
+    offScreenRender();
+    render();
+  }
+
+  function animateDraw(){
+
+    cancelAnimationFrame(shadowMappingAnimationFrameID);
+
+    mat4.rotate(modelMat_2, modelMat_2, glMatrix.toRadian(4), vec3.fromValues(0, 1, 0));
+
+    vec3.rotateX(lightPosition, lightPosition, vec3.fromValues(5, 5, 5), glMatrix.toRadian(1));
+
+    modelMat_3 = mat4.create();
+    mat4.translate(modelMat_3, modelMat_3, lightPosition);
+
+    draw();
+
+    shadowMappingAnimationFrameID = requestAnimationFrame(animateDraw);
+
+  }
+
+
+  function offScreenRender(){
+
+    pfgl.useProgram(program1);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, offScreen.frameBuffer);
+
+    gl.viewport(0, 0, OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT);
+
+    var omniViewMatrices = [
+      // Positive X
+      mat4.lookAt(
+        mat4.create(),
+        lightPosition,
+        vec3.add(vec3.create(), lightPosition, vec3.fromValues(1, 0, 0)),
+        vec3.fromValues(0, -1, 0)
+      ),
+      // Negative X
+      mat4.lookAt(
+        mat4.create(),
+        lightPosition,
+        vec3.add(vec3.create(), lightPosition, vec3.fromValues(-1, 0, 0)),
+        vec3.fromValues(0, -1, 0)
+      ),
+      // Positive Y
+      mat4.lookAt(
+        mat4.create(),
+        lightPosition,
+        vec3.add(vec3.create(), lightPosition, vec3.fromValues(0, 1, 0)),
+        vec3.fromValues(0, 0, 1)
+      ),
+      // Negative Y
+      mat4.lookAt(
+        mat4.create(),
+        lightPosition,
+        vec3.add(vec3.create(), lightPosition, vec3.fromValues(0, -1, 0)),
+        vec3.fromValues(0, 0, -1)
+      ),
+      // Positive Z
+      mat4.lookAt(
+        mat4.create(),
+        lightPosition,
+        vec3.add(vec3.create(), lightPosition, vec3.fromValues(0, 0, 1)),
+        vec3.fromValues(0, -1, 0)
+      ),
+      // Negative Z
+      mat4.lookAt(
+        mat4.create(),
+        lightPosition,
+        vec3.add(vec3.create(), lightPosition, vec3.fromValues(0, 0, -1)),
+        vec3.fromValues(0, -1, 0)
+      )
+    ];
+
+    omniViewMatrices.forEach((v, i) => {
+
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, pfgl.textureCubeTargets[i], offScreen.texture, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+      var shadowMapViewMat = v;
+
+      renderMeshDepth(utah, modelMat_1, shadowMapViewMat, shadowMapProjMat, lightPosition);
+      renderMeshDepth(torus, modelMat_2, shadowMapViewMat, shadowMapProjMat, lightPosition);
+      renderMeshDepth(faceCube, modelMat_c, shadowMapViewMat, shadowMapProjMat, lightPosition);
+
+    });
+
+  }
+
+  function renderMeshDepth(obj, mMat, vMat, pMat, lp){
+    pfgl.attribute('a_position', obj.vertices);
+    pfgl.uniform('u_modelMat', mMat);
+    pfgl.uniform('u_viewMat', vMat);
+    pfgl.uniform('u_projMat', pMat);
+    pfgl.uniform('u_pointLightPosition', lp);
+    if(obj.indices.BYTES_PER_ELEMENT == 2){
+      pfgl.drawElements(gl.TRIANGLES, obj.indices, gl.UNSIGNED_SHORT, 0);
+    }else{
+      pfgl.drawElements(gl.TRIANGLES, obj.indices, gl.UNSIGNED_BYTE, 0);
+    }
+  }
+
+
+
+  function render(){
+
+    pfgl.useProgram(program2);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    gl.activeTexture(gl.TEXTURE0 + textureUnit);
+    gl.bindTexture(gl.TEXTURE_CUBE_MAP, offScreen.texture);
+    pfgl.uniform('u_shadowMap', textureUnit);
+
+    pfgl.uniform('u_pointLightColor', new Float32Array([1.0, 1.0, 1.0]));
+    pfgl.uniform('u_ambientLight', new Float32Array([0.1, 0.1, 0.1]));
+
+
+    renderMesh(utah, modelMat_1, viewMat, projMat, lightPosition);
+    renderMesh(torus, modelMat_2, viewMat, projMat, lightPosition);
+    renderMesh(bulb, modelMat_3, viewMat, projMat, lightPosition);
+
+    gl.enable(gl.CULL_FACE);
+    gl.cullFace(gl.FRONT);
+    renderMesh(faceCube, modelMat_c, viewMat, projMat, lightPosition);
+    gl.disable(gl.CULL_FACE);
+
+  }
+
+
+  function renderMesh(obj, mMat, vMat, pMat, lp){
+    pfgl.attribute('a_position', obj.vertices);
+    pfgl.attribute('a_color', obj.colors);
+    pfgl.attribute('a_normal', obj.normals);
+    pfgl.uniform('u_modelMat', mMat);
+    pfgl.uniform('u_viewMat', vMat);
+    pfgl.uniform('u_projMat', pMat);
+    pfgl.uniform('u_pointLightPosition', lp);
+    if(obj.indices.BYTES_PER_ELEMENT == 2){
+      pfgl.drawElements(gl.TRIANGLES, obj.indices, gl.UNSIGNED_SHORT, 0);
+    }else{
+      pfgl.drawElements(gl.TRIANGLES, obj.indices, gl.UNSIGNED_BYTE, 0);
+    }
+  }
+
+
+  /*
+   * tools
+   */
+  function setColor(obj, aColor){
+    var colors = [];
+    for(var i = 0, len = (obj.vertices.length / 3); i < len; i ++){
+      colors.push(aColor[0], aColor[1], aColor[2]);
+    }
+    obj.colors = new Float32Array(colors);
+  }
+
+
+</script>
+
+</body>
+</html>
