@@ -102,7 +102,7 @@
     var OFFSCREEN_WIDTH = 2048, OFFSCREEN_HEIGHT = 2048;
 
     //depth map
-    var offScreen = pfgl.frameBuffer(OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT);
+    var offScreen = pfgl.offScreen(OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT);
 
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 

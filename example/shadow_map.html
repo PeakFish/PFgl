@@ -205,7 +205,7 @@
     mat4.mul(mvpMatInLight_p, projMat, viewMatInLight);
     mat4.mul(mvpMatInLight_p, mvpMatInLight_p, modelMatInLight_p);
 
-    var offScreen = pfgl.frameBuffer(OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT);
+    var offScreen = pfgl.offScreen(OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT);
 
     var textureUnit = 0;
     gl.activeTexture(gl.TEXTURE0 + textureUnit);

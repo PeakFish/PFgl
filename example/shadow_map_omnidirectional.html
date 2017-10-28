@@ -167,17 +167,36 @@
   setColor(utah, [1.0, 1.0, 1.0]);
   utah.indices = teapotModel.indices;
 
+  //添加 buffer
+  utah.verticesBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, utah.vertices);
+  utah.normalsBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, utah.normals);
+  utah.colorsBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, utah.colors);
+  utah.indicesBuffer = pfgl.buildBuffer(gl.ELEMENT_ARRAY_BUFFER, utah.indices);
+
   var torus = uvTorus();
   torus.vertices = torus.vertexPositions;
   torus.normals = torus.vertexNormals;
   setColor(torus, [1.0, 0.0, 1.0]);
   torus.indices = torus.indices;
 
+  //添加 buffer
+  torus.verticesBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, torus.vertices);
+  torus.normalsBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, torus.normals);
+  torus.colorsBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, torus.colors);
+  torus.indicesBuffer = pfgl.buildBuffer(gl.ELEMENT_ARRAY_BUFFER, torus.indices);
+
   var bulb = uvSphere();
   bulb.vertices = bulb.vertexPositions;
   bulb.normals = bulb.vertexNormals.map((n) => -n);
   setColor(bulb, [1.0, 1.0, 1.0]);
   bulb.indices = bulb.indices;
+
+  //添加 buffer
+  bulb.verticesBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, bulb.vertices);
+  bulb.normalsBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, bulb.normals);
+  bulb.colorsBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, bulb.colors);
+  bulb.indicesBuffer = pfgl.buildBuffer(gl.ELEMENT_ARRAY_BUFFER, bulb.indices);
+
 
   var faceCube = {
     vertices: new Float32Array([
@@ -215,6 +234,11 @@
   };
 
 
+  //添加 buffer
+  faceCube.verticesBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, faceCube.vertices);
+  faceCube.normalsBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, faceCube.normals);
+  faceCube.colorsBuffer = pfgl.buildBuffer(gl.ARRAY_BUFFER, faceCube.colors);
+  faceCube.indicesBuffer = pfgl.buildBuffer(gl.ELEMENT_ARRAY_BUFFER, faceCube.indices);
 
 
   var lightPosition = vec3.fromValues(0, 30, 30);
@@ -253,10 +277,10 @@
 
   var textureUnit = 5;
   var OFFSCREEN_WIDTH = 512, OFFSCREEN_HEIGHT = 512;
-  var offScreen = pfgl.frameBuffer(OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT, 3, textureUnit);
+  var offScreen = pfgl.offScreen(OFFSCREEN_WIDTH, OFFSCREEN_HEIGHT, {type: 3, unit: textureUnit});
 
-  draw();
-  // animateDraw();
+  // draw();
+  animateDraw();
   PFGL.control(gl.canvas, draw, viewMat, eye, center, up);
 
   function draw(){
@@ -351,15 +375,18 @@
   }
 
   function renderMeshDepth(obj, mMat, vMat, pMat, lp){
-    pfgl.attribute('a_position', obj.vertices);
+    // pfgl.attribute('a_position', obj.vertices);
+    pfgl.attribute('a_position', obj.verticesBuffer);
     pfgl.uniform('u_modelMat', mMat);
     pfgl.uniform('u_viewMat', vMat);
     pfgl.uniform('u_projMat', pMat);
     pfgl.uniform('u_pointLightPosition', lp);
     if(obj.indices.BYTES_PER_ELEMENT == 2){
-      pfgl.drawElements(gl.TRIANGLES, obj.indices, gl.UNSIGNED_SHORT, 0);
+      // pfgl.drawElements(gl.TRIANGLES, obj.indices, gl.UNSIGNED_SHORT, 0);
+      pfgl.drawElements(gl.TRIANGLES, obj.indicesBuffer, gl.UNSIGNED_SHORT, 0, obj.indices.length);
     }else{
-      pfgl.drawElements(gl.TRIANGLES, obj.indices, gl.UNSIGNED_BYTE, 0);
+      // pfgl.drawElements(gl.TRIANGLES, obj.indices, gl.UNSIGNED_BYTE, 0);
+      pfgl.drawElements(gl.TRIANGLES, obj.indicesBuffer, gl.UNSIGNED_BYTE, 0, obj.indices.length);
     }
   }
 
@@ -395,17 +422,22 @@
 
 
   function renderMesh(obj, mMat, vMat, pMat, lp){
-    pfgl.attribute('a_position', obj.vertices);
-    pfgl.attribute('a_color', obj.colors);
-    pfgl.attribute('a_normal', obj.normals);
+    // pfgl.attribute('a_position', obj.vertices);
+    // pfgl.attribute('a_color', obj.colors);
+    // pfgl.attribute('a_normal', obj.normals);
+    pfgl.attribute('a_position', obj.verticesBuffer);
+    pfgl.attribute('a_color', obj.colorsBuffer);
+    pfgl.attribute('a_normal', obj.normalsBuffer);
     pfgl.uniform('u_modelMat', mMat);
     pfgl.uniform('u_viewMat', vMat);
     pfgl.uniform('u_projMat', pMat);
     pfgl.uniform('u_pointLightPosition', lp);
     if(obj.indices.BYTES_PER_ELEMENT == 2){
-      pfgl.drawElements(gl.TRIANGLES, obj.indices, gl.UNSIGNED_SHORT, 0);
+      // pfgl.drawElements(gl.TRIANGLES, obj.indices, gl.UNSIGNED_SHORT, 0);
+      pfgl.drawElements(gl.TRIANGLES, obj.indicesBuffer, gl.UNSIGNED_SHORT, 0, obj.indices.length);
     }else{
-      pfgl.drawElements(gl.TRIANGLES, obj.indices, gl.UNSIGNED_BYTE, 0);
+      // pfgl.drawElements(gl.TRIANGLES, obj.indices, gl.UNSIGNED_BYTE, 0);
+      pfgl.drawElements(gl.TRIANGLES, obj.indicesBuffer, gl.UNSIGNED_BYTE, 0, obj.indices.length);
     }
   }
 

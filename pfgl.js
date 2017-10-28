@@ -7,6 +7,7 @@
     this.program = [];
     this.pointer = [];
     this.currentProgramIndex = -1;
+
     this.textureCubeTargets = [
       gl.TEXTURE_CUBE_MAP_POSITIVE_X, gl.TEXTURE_CUBE_MAP_NEGATIVE_X,
       gl.TEXTURE_CUBE_MAP_POSITIVE_Y, gl.TEXTURE_CUBE_MAP_NEGATIVE_Y,
@@ -27,9 +28,7 @@
 
 
   PFGL.prototype.getCurrentProgram = function(){
-
     return this.program[this.currentProgramIndex];
-
   };
 
 
@@ -83,22 +82,37 @@
   };
 
 
-  PFGL.prototype.buildBuffer = function(type, typedArray){
+  PFGL.prototype.buildBuffer = function(type, data){
 
     var gl = this.gl;
     var buffer = gl.createBuffer();
     gl.bindBuffer(type, buffer);
-    gl.bufferData(type, typedArray, gl.STATIC_DRAW);
+    gl.bufferData(type, data, gl.STATIC_DRAW);
 
     return buffer;
 
   };
 
 
-  PFGL.prototype.drawElements = function(mode, indices, type, offset){
-    //cache buffer?
-    this.buildBuffer(this.gl.ELEMENT_ARRAY_BUFFER, indices);
-    this.gl.drawElements(mode, indices.length, type, offset);
+  PFGL.prototype.drawElements = function(mode, data, type, offset, bufferLen){
+
+    var gl = this.gl;
+
+    if(data.byteLength){
+
+      this.buildBuffer(gl.ELEMENT_ARRAY_BUFFER, data);
+      gl.drawElements(mode, data.length, type, offset);
+
+    }else if(data.constructor === WebGLBuffer){
+
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, data);
+      gl.drawElements(mode, bufferLen, type, offset);
+
+    }else{
+
+      console.error('Unkonw parameter `data` type: ' + data);
+
+    }
 
   };
 
@@ -115,19 +129,18 @@
       attributes = new Array(attributes);
     }
 
-    if(data.BYTES_PER_ELEMENT){
-
+    // ArrayBuffer.isView(data) || data.constructor === ArrayBuffer
+    if(data.byteLength){
       this.buildBuffer(gl.ARRAY_BUFFER, data);
-
-    }else{
-
+    }else if(data.constructor === WebGLBuffer){
       gl.bindBuffer(gl.ARRAY_BUFFER, data);
-
+    }else{
+      console.error('Unkonw parameter `data` type: ' + data);
     }
 
     program = program || this.getCurrentProgram();
 
-    for(var i = 0; i < attributes.length; i ++){
+    for(var i = 0, len = attributes.length; i < len; i ++){
 
       var name = attributes[i].name;
       var pointer = null;
@@ -148,10 +161,12 @@
       }
 
       var size = attributes[i].size || 3;
+      var type = attributes[i].type || gl.FLOAT;
+      var normalized = attributes[i].normalized || false;
       var stride = attributes[i].stride || 0;
       var offset = attributes[i].offset || 0;
 
-      gl.vertexAttribPointer(pointer, size, gl.FLOAT, false, stride, offset);
+      gl.vertexAttribPointer(pointer, size, type, normalized, stride, offset);
       gl.enableVertexAttribArray(pointer);
 
     }
@@ -269,10 +284,16 @@
 
   };
 
-
-  PFGL.prototype.texture2d = function(element, unit, width, height){
+  PFGL.prototype.texture2d = function(element, unit, width, height, options = {}){
 
     var gl = this.gl;
+
+    var format = options.format || gl.RGBA;
+    var type = options.type || gl.UNSIGNED_BYTE;
+    var minFilter = options.filter || options.minFilter || gl.LINEAR;
+    var magFilter = options.filter || options.magFilter || gl.LINEAR;
+    var wrapS = options.wrap || options.wrapS || gl.CLAMP_TO_EDGE;
+    var wrapT = options.wrap || options.wrapT || gl.CLAMP_TO_EDGE;
 
     //flip the image's y axis
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
@@ -286,19 +307,23 @@
     //set texture resource https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/texImage2D
     if(element && /img|canvas|video/i.test(element.nodeName)){
 
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, element);
+      gl.texImage2D(gl.TEXTURE_2D, 0, format, format, type, element);
+
+    }else if(!element){
+
+      gl.texImage2D(gl.TEXTURE_2D, 0, format, width, height, 0, format, type, null);
 
     }else{
 
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      console.error('Unkonw parameter `element` type: ' + element);
 
     }
 
     //set texture behaviour
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.MIRRORED_REPEAT);
-    // gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.MIRRORED_REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, minFilter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, magFilter);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT);
 
     return texture;
 
@@ -307,12 +332,20 @@
   /*
    * @param {Array} elements - Array elements is return value frome PFGL.loadImg.
    */
-  PFGL.prototype.textureCube = function(elements, unit, width, height){
+  PFGL.prototype.textureCube = function(elements, unit, width, height, options = {}){
 
     var gl = this.gl;
 
+    var format = options.format || gl.RGBA;
+    var type = options.type || gl.UNSIGNED_BYTE;
+    var minFilter = options.filter || options.minFilter || gl.LINEAR;
+    var magFilter = options.filter || options.magFilter || gl.LINEAR;
+    var wrapS = options.wrap || options.wrapS || gl.CLAMP_TO_EDGE;
+    var wrapT = options.wrap || options.wrapT || gl.CLAMP_TO_EDGE;
+    var flip_y = options.flip_y || false;
+
     //flip the image's y axis
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flip_y);
 
     var texture = gl.createTexture();
 
@@ -320,26 +353,30 @@
 
     gl.bindTexture(gl.TEXTURE_CUBE_MAP, texture);
 
-    elements.forEach((v, i) => {
+    elements.forEach((v, i) => { // v => value i => index
 
       var element = v && v[0];
 
       if(element && /img|canvas|video/i.test(element.nodeName)){
 
-        gl.texImage2D(this.textureCubeTargets[i], 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, element);
+        gl.texImage2D(this.textureCubeTargets[i], 0, format, format, type, element);
+
+      }else if(!element){
+
+        gl.texImage2D(this.textureCubeTargets[i], 0, format, width, height, 0, gl.RGBA, type, null);
 
       }else{
 
-        gl.texImage2D(this.textureCubeTargets[i], 0, gl.RGBA, width, height, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+        console.error('Unkonw parameter `element` type: ' + element);
 
       }
 
     });
 
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MIN_FILTER, minFilter);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_MAG_FILTER, magFilter);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, wrapS);
+    gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, wrapT);
 
     gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
 
@@ -347,43 +384,54 @@
 
   };
 
+  PFGL.prototype.bindTextureUnit = function(texture, textureUnit = 0, textureType = 2){
 
-  PFGL.prototype.frameBuffer = function(width, height, textureType, textureUnit){
+    var gl = this.gl;
+    var format;
 
-    var gl = this.gl, texture;
-
-    textureType = textureType || 2;//Default off screen texture is 2d
-    textureUnit = textureUnit || 0;
-
-    if(textureType == 2){
-
-      texture = this.texture2d(null, textureUnit, width, height);
-
-    }else if(textureType == 3){
-
-      texture = this.textureCube([...(new Array(6))], textureUnit, width, height);
-
+    if(textureType === 2){
+      format = gl.TEXTURE_2D;
+    }else if(textureType === 3){
+      format = gl.TEXTURE_CUBE_MAP;
     }
 
-    var depthBuffer = gl.createRenderbuffer();
+    gl.activeTexture(gl.TEXTURE0 + textureUnit);
+    gl.bindTexture(format, texture);
+
+  };
+
+
+  PFGL.prototype.offScreen = function(width, height, textureOptions = {}){
+
+    var gl = this.gl;
+
+    var texture = textureOptions.texture;
+    var textureType = textureOptions.type || 2;//Default off-screen texture is 2d
+    var textureUnit = textureOptions.unit || 0;
+
+    if(!texture){
+      if(textureType === 2){
+        texture = this.texture2d(null, textureUnit, width, height);
+      }else if(textureType === 3){
+        texture = this.textureCube([...(new Array(6))], textureUnit, width, height);
+      }else{
+        console.error('Unkonw parameter `textureType` type: ' + textureType);
+      }
+    }
+
+    var depthBuffer = this.offScreenDepthBuffer || gl.createRenderbuffer();
     gl.bindRenderbuffer(gl.RENDERBUFFER, depthBuffer);
     gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
 
-    var frameBuffer = gl.createFramebuffer();
+    var frameBuffer = this.offScreenFrameBuffer || gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, frameBuffer);
 
-    if(textureType == 2){
-
+    if(textureType === 2){
       gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
-
-    }else if(textureType == 3){
-
-      /*this.textureCubeTargets.forEach((v) => {
-
-        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, v, texture, 0);
-
-      });*/
-
+    }else if(textureType === 3){
+      // this.textureCubeTargets.forEach((v) => {
+      //   gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, v, texture, 0);
+      // });
     }
 
     gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, depthBuffer);

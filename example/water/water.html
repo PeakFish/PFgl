@@ -3,8 +3,30 @@
 <head>
 <meta charset="utf-8" />
 <title>pfgl webgl water</title>
+<style type="text/css">
+  html, body {margin: 0;padding: 0;}/*操作的时候canvas的（0，0）点和 窗口的（0，0）要重合，不用js做处理了*/
+  p {margin: 8px;}
+</style>
 </head>
 <body>
+
+<canvas width="600" height="600" id="canvas1"></canvas>
+<p>
+  <button onclick="stopAnimate()">stop</button>
+  学习<a href="http://madebyevan.com/webgl-water/">webgl water</a>的效果，用自己的pfgl实现了一下这个效果。
+</p>
+
+
+<script src="../js/lib/gl-matrix.js"></script>
+<!-- <script src="../js/lib/csg.js"></script> -->
+<script src="../../pfgl.js"></script>
+<!-- <script src="../js/pfgl.control.js"></script> -->
+<script src="../js/pfgl.mesh.js"></script>
+<script src="../js/pfgl.raytracer.js"></script>
+
+<script src="water.js"></script>
+<script src="main.js"></script>
+
 
 </body>
 </html>
