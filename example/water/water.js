@@ -263,7 +263,7 @@ function textureCanDrawTo(texture){
 
 function drawToTexture(texture, width, height, callback){
   var v = gl.getParameter(gl.VIEWPORT);
-  v = [0, 0, 600, 600];
+  // v = [0, 0, 600, 600]; fix window.devicePixelRatio bug in main.js
   var offScreen = pfgl.offScreen(width, height, {texture: texture, type: 2, unit: 0});
   gl.viewport(0, 0, width, height);
   callback();

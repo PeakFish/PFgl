@@ -168,7 +168,7 @@ function update(seconds) {
 
     var velocity_norm = vec3.normalize(vec3.create(), velocity);
     vec3.scale(velocity_norm, velocity_norm, percentUnderWater * seconds * vec3.dot(velocity, velocity));
-    vec3.subtract(velocity, velocity, velocity_norm)
+    vec3.subtract(velocity, velocity, velocity_norm);
 
     var velocity_sca_seconds = vec3.scale(vec3.create(), velocity, seconds);
     center = vec3.add(vec3.create(), center, velocity_sca_seconds);//这块要这么写的原因是 center不能和 oldcenter指向同一个地址
