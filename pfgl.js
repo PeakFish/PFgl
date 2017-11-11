@@ -14,6 +14,13 @@
       gl.TEXTURE_CUBE_MAP_POSITIVE_Z, gl.TEXTURE_CUBE_MAP_NEGATIVE_Z
     ];
 
+    this.textureMipmapTargets = [
+      gl.NEAREST_MIPMAP_NEAREST,
+      gl.LINEAR_MIPMAP_NEAREST,
+      gl.NEAREST_MIPMAP_LINEAR,
+      gl.LINEAR_MIPMAP_LINEAR
+    ];
+
   };
 
 
@@ -294,9 +301,11 @@
     var magFilter = options.filter || options.magFilter || gl.LINEAR;
     var wrapS = options.wrap || options.wrapS || gl.CLAMP_TO_EDGE;
     var wrapT = options.wrap || options.wrapT || gl.CLAMP_TO_EDGE;
+    var flipY = options.flipY || true;
+    var mipmap = options.mipmap || false;
 
     //flip the image's y axis
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flipY);
 
     var texture = gl.createTexture();
 
@@ -325,6 +334,10 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrapS);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrapT);
 
+    if(mipmap || (this.textureMipmapTargets.indexOf(minFilter) !== -1)){
+      gl.generateMipmap(gl.TEXTURE_2D);
+    }
+
     return texture;
 
   };
@@ -342,10 +355,11 @@
     var magFilter = options.filter || options.magFilter || gl.LINEAR;
     var wrapS = options.wrap || options.wrapS || gl.CLAMP_TO_EDGE;
     var wrapT = options.wrap || options.wrapT || gl.CLAMP_TO_EDGE;
-    var flip_y = options.flip_y || false;
+    var flipY = options.flipY || false;
+    var mipmap = options.mipmap || false;
 
     //flip the image's y axis
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flip_y);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flipY);
 
     var texture = gl.createTexture();
 
@@ -378,7 +392,9 @@
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_S, wrapS);
     gl.texParameteri(gl.TEXTURE_CUBE_MAP, gl.TEXTURE_WRAP_T, wrapT);
 
-    gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+    if(mipmap || (this.textureMipmapTargets.indexOf(minFilter) !== -1)){
+      gl.generateMipmap(gl.TEXTURE_CUBE_MAP);
+    }
 
     return texture;
 

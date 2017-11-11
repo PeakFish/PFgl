@@ -661,7 +661,7 @@ function Renderer(){
     format: gl.RGB
   });
   // ???????????????????
-  gl.generateMipmap(gl.TEXTURE_2D);
+  // gl.generateMipmap(gl.TEXTURE_2D);
 
   //光照方向
   this.lightDir = vec3.normalize(vec3.create(), vec3.fromValues(2.0, 2.0, -1.0));
