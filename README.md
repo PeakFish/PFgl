@@ -7,52 +7,52 @@ PFGL 是对 WebGL API 的一个简单的组装。
 ## 例子
   <ul>
     <li>
-      <a href="example/myshader/myshader.html">shader</a>
+      <a target="_blank" href="example/myshader/myshader.html">shader</a>
     </li>
     <li>
-      <a href="example/triangle.html">三角形</a>
+      <a target="_blank" href="example/triangle.html">三角形</a>
     </li>
     <li>
-      <a href="example/texture.html">纹理</a>
+      <a target="_blank" href="example/texture.html">纹理</a>
     </li>
     <li>
-      <a href="example/sphere.html">球</a>
+      <a target="_blank" href="example/sphere.html">球</a>
     </li>
     <li>
-      <a href="example/multiProgram.html">多个program</a>
+      <a target="_blank" href="example/multiProgram.html">多个program</a>
     </li>
     <li>
-      <a href="example/box.html">光照正方体</a>
+      <a target="_blank" href="example/box.html">光照正方体</a>
     </li>
     <li>
-      <a href="example/stencilBuffer.html">模板测试</a>
+      <a target="_blank" href="example/stencilBuffer.html">模板测试</a>
     </li>
     <li>
-      <a href="example/alpha.html">透明度</a>
+      <a target="_blank" href="example/alpha.html">透明度</a>
     </li>
     <li>
-      <a href="example/fog.html">雾</a>
+      <a target="_blank" href="example/fog.html">雾</a>
     </li>
     <li>
-      <a href="example/particle.html">粒子</a>
+      <a target="_blank" href="example/particle.html">粒子</a>
     </li>
     <li>
-      <a href="example/teapot.html">茶壶</a>
+      <a target="_blank" href="example/teapot.html">茶壶</a>
     </li>
     <li>
-      <a href="example/shadow_map.html">阴影</a>
+      <a target="_blank" href="example/shadow_map.html">阴影</a>
     </li>
     <li>
-      <a href="example/shadow_map_omnidirectional.html">阴影2</a>
+      <a target="_blank" href="example/shadow_map_omnidirectional.html">阴影2</a>
     </li>
     <li>
-      <a href="example/skybox/skybox.html">skybox</a>
+      <a target="_blank" href="example/skybox/skybox.html">skybox</a>
     </li>
     <li>
-      <a href="example/skybox/skybox-and-env-map.html">skybox2</a>
+      <a target="_blank" href="example/skybox/skybox-and-env-map.html">skybox2</a>
     </li>
     <li>
-      <a href="example/water/water.html">pfgl webgl water</a>
+      <a target="_blank" href="example/water/water.html">pfgl webgl water</a>
     </li>
   </ul>
 
